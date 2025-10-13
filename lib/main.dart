@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'providers/search_provider.dart';  // Import file mới
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'screens/pdf_viewer_screen.dart';  // Import screen mới
 
 void main() {
   runApp(const MyApp());
@@ -93,9 +94,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {  // Thay State
                                   title: Text(result.filename),
                                   subtitle: Text(result.url),  // Hiển thị URL tạm
                                   onTap: () {
-                                    // Sau: Mở PDF viewer
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Mở PDF: ${result.filename}')),
+                                    if (result.url.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('URL PDF không hợp lệ!')),
+                                      );
+                                      return;
+                                    }
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => PdfViewerScreen(
+                                          pdfUrl: result.url,
+                                          filename: result.filename,
+                                        ),
+                                      ),
                                     );
                                   },
                                 );

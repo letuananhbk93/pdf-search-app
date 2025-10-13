@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/api_service.dart';  // Import Dio service
 
 // Model đơn giản cho kết quả PDF (sau mở rộng)
 class PdfResult {
@@ -36,8 +37,11 @@ class SearchState {
 }
 
 // Notifier
-class SearchNotifier extends StateNotifier<SearchState> {
-  SearchNotifier() : super(const SearchState());
+class SearchNotifier extends Notifier<SearchState> {
+  @override
+  SearchState build() {
+    return const SearchState();
+  }
 
   Future<void> performSearch(String query) async {
     if (query.isEmpty) {
@@ -45,13 +49,22 @@ class SearchNotifier extends StateNotifier<SearchState> {
       return;
     }
 
-    state = state.copyWith(isLoading: true, error: null);  // Bắt đầu loading
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // Simulate API delay (sau thay bằng Dio)
-      await Future.delayed(const Duration(seconds: 1));
-      final mockResults = PdfResult.mockResults(query);
-      state = state.copyWith(isLoading: false, results: mockResults);
+      final apiService = ApiService();
+      final jsonData = await apiService.searchPdfs(query);  // Gọi Dio
+
+      // Parse JSON thành List<PdfResult> (mock map từ posts)
+      final List<PdfResult> parsedResults = jsonData.map<PdfResult>((json) {
+        return PdfResult(
+          id: json['id'].toString(),
+          filename: '${json['title']}.pdf',  // Map title thành filename
+          url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',  // URL PDF sample thật (dummy 1 trang)
+        );
+      }).toList();
+
+      state = state.copyWith(isLoading: false, results: parsedResults);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
@@ -59,6 +72,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
 }
 
 // Provider
-final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>(
-  (ref) => SearchNotifier(),
+final searchProvider = NotifierProvider<SearchNotifier, SearchState>(
+  () => SearchNotifier(),
 );

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">jsonplaceholder.typicode.com</domain>  <!-- Cho mock -->
+        <!-- Thêm domain server thật sau: <domain>your-server.com</domain> -->
+    </domain-config>
+</network-security-config>
