@@ -53,14 +53,14 @@ class SearchNotifier extends Notifier<SearchState> {
 
     try {
       final apiService = ApiService();
-      final jsonData = await apiService.searchPdfs(query);  // Gọi Dio
+      final jsonData = await apiService.searchPdfs(query);  // Gọi Dio đến Heroku /search
 
-      // Parse JSON thành List<PdfResult> (mock map từ posts)
+      // Parse JSON từ Heroku thành List<PdfResult>
       final List<PdfResult> parsedResults = jsonData.map<PdfResult>((json) {
         return PdfResult(
           id: json['id'].toString(),
-          filename: '${json['title']}.pdf',  // Map title thành filename
-          url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',  // URL PDF sample thật (dummy 1 trang)
+          filename: json['filename'],  // Tên file thật từ backend
+          url: json['url'],  // Signed URL từ GCS (load PDF thật)
         );
       }).toList();
 

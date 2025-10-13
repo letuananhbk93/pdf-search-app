@@ -9,7 +9,7 @@ class ApiService {
 
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://jsonplaceholder.typicode.com/',  // Mock base URL
+      baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',  // Mock base URL
       connectTimeout: const Duration(seconds: 5),
       receiveTimeout: const Duration(seconds: 3),
       headers: {'Content-Type': 'application/json'},
@@ -30,7 +30,7 @@ class ApiService {
   // Gọi search API (sau thay baseUrl thành server thật)
   Future<List<dynamic>> searchPdfs(String query) async {
     try {
-      final response = await _dio.get('posts', queryParameters: {'_limit': 5});  // Lấy 5 posts mock
+      final response = await _dio.get('search', queryParameters: {'query': query});  // Lấy 5 posts mock
       if (response.statusCode == 200) {
         return response.data;  // Trả list JSON
       } else {
