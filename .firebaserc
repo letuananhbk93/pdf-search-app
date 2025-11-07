@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "tlc-drawings-search-web-c3dd5"
+  },
+  "targets": {
+    "tlc-drawings-search-web-c3dd5": {
+      "hosting": {
+        "main": [
+          "tlc-drawings-search-web-c3dd5"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

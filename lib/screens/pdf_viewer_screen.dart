@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:pdfx/pdfx.dart';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+// Conditional import for web
+import '../web_utils_stub.dart' if (dart.library.html) '../web_utils_web.dart';
 
 class PdfViewerScreen extends StatefulWidget {
   final String pdfUrl;
@@ -21,7 +24,30 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPdf();
+    if (kIsWeb) {
+      // On web, open PDF in new tab instead of trying to load it
+      _openPdfInNewTab();
+    } else {
+      _loadPdf();
+    }
+  }
+
+  Future<void> _openPdfInNewTab() async {
+    try {
+      // Use web utils to open PDF in new tab on web
+      if (kIsWeb) {
+        openUrlInNewTab(widget.pdfUrl);
+        // Close this screen after opening the PDF
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+        errorMessage = 'Lỗi: ${e.toString()}';
+      });
+    }
   }
 
   Future<void> _loadPdf() async {
