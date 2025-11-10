@@ -122,7 +122,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Lỗi load PDF: ${error.toString()}'),
-                        backgroundColor: Colors.red,
+                        backgroundColor: const Color(0xFFC00000),
                         action: SnackBarAction(
                           label: 'Thử lại',
                           onPressed: () => Navigator.pop(context),

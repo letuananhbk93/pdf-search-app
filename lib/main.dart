@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/login_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/colors_screen.dart';
 
 
 void main() {
@@ -19,16 +21,9 @@ class MyApp extends StatelessWidget {
       initialRoute: '/',
       routes: {
         '/': (context) => const LoginScreen(),
-        '/main': (context) => LayoutBuilder(
-          builder: (context, constraints) {
-            final isDesktop = constraints.maxWidth >= 800; // adjust threshold as needed
-            if (isDesktop) {
-              // Desktop UI not implemented yet - fall back to the existing SearchScreen
-              return const SearchScreen();
-            }
-            return const SearchScreen(); // Mobile UI hiện tại
-          },
-        ),
+        '/main': (context) => const HomeScreen(),
+        '/search': (context) => const SearchScreen(),
+        '/colors': (context) => const ColorsScreen(),
       },
     );
   }
