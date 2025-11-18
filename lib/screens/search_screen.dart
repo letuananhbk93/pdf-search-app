@@ -72,26 +72,43 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               itemCount: searchState.results.length,
                               itemBuilder: (context, index) {
                                 final result = searchState.results[index];
-                                return ListTile(
-                                  leading: PdfThumbnail(pdfUrl: result.url),
-                                  title: Text(result.filename),
-                                  onTap: () {
-                                    if (result.url.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('URL PDF không hợp lệ!')),
-                                      );
-                                      return;
-                                    }
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => PdfViewerScreen(
-                                          pdfUrl: result.url,
-                                          filename: result.filename,
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  child: InkWell(
+                                    onTap: () {
+                                      if (result.url.isEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('URL PDF không hợp lệ!')),
+                                        );
+                                        return;
+                                      }
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => PdfViewerScreen(
+                                            pdfUrl: result.url,
+                                            filename: result.filename,
+                                          ),
                                         ),
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Row(
+                                        children: [
+                                          PdfThumbnail(pdfUrl: result.url),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Text(
+                                              result.filename,
+                                              style: const TextStyle(fontSize: 16),
+                                            ),
+                                          ),
+                                          const Icon(Icons.arrow_forward_ios, size: 16),
+                                        ],
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 );
                               },
                             ),
