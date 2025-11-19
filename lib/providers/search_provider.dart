@@ -6,8 +6,9 @@ class PdfResult {
   final String id;
   final String filename;
   final String url;  // URL PDF từ server
+  final String? thumbnailUrl;  // URL thumbnail image from backend
 
-  PdfResult({required this.id, required this.filename, required this.url});
+  PdfResult({required this.id, required this.filename, required this.url, this.thumbnailUrl});
 
   // Mock factory để test
   static List<PdfResult> mockResults(String query) {
@@ -57,12 +58,20 @@ class SearchNotifier extends Notifier<SearchState> {
 
       // Parse JSON từ Heroku thành List<PdfResult>
       final List<PdfResult> parsedResults = jsonData.map<PdfResult>((json) {
+        print('Backend JSON item: $json');
+        print('Thumbnail URL from backend: ${json['thumbnail_url']}');
         return PdfResult(
           id: json['id'].toString(),
           filename: json['filename'],  // Tên file thật từ backend
           url: json['url'],  // Signed URL từ GCS (load PDF thật)
+          thumbnailUrl: json['thumbnail_url'],  // Thumbnail URL from backend
         );
       }).toList();
+      
+      print('Total results parsed: ${parsedResults.length}');
+      for (var result in parsedResults) {
+        print('Result: ${result.filename}, ThumbnailURL: ${result.thumbnailUrl}');
+      }
 
       state = state.copyWith(isLoading: false, results: parsedResults);
     } catch (e) {
