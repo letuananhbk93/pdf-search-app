@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'TLC DRAWINGS SEARCH APP',
+                    'TLC APPLICATION',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,

@@ -31,6 +31,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFFC00000),
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           'TLC DRAWINGS SEARCH APP',
           style: TextStyle(color: Colors.white),

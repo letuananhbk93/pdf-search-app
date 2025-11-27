@@ -53,6 +53,19 @@ class HomeScreen extends StatelessWidget {
                 minimumSize: const Size(200, 50),
               ),
             ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/dims');  // Navigate to Package Dims
+              },
+              icon: const Icon(Icons.inventory_2),
+              label: const Text('PACKAGE DIMS'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC00000),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(200, 50),
+              ),
+            ),
           ],
         ),
       ),

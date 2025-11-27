@@ -46,9 +46,10 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: const Color(0xFFC00000),  // Bordeaux theme
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: const Icon(Icons.search, color: Colors.white),
             onPressed: () {
               showSearch(
                 context: context,

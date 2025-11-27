@@ -4,6 +4,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/colors_screen.dart';
+import 'screens/dims_screen.dart';
 
 
 void main() {
@@ -24,6 +25,7 @@ class MyApp extends StatelessWidget {
         '/main': (context) => const HomeScreen(),
         '/search': (context) => const SearchScreen(),
         '/colors': (context) => const ColorsScreen(),
+        '/dims': (context) => const DimsScreen(),
       },
     );
   }

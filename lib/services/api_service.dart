@@ -10,8 +10,8 @@ class ApiService {
   final Dio _dio = Dio(
     BaseOptions(
       baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',  // Mock base URL
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 120),
+      receiveTimeout: const Duration(seconds: 120),
       headers: {'Content-Type': 'application/json'},
     ),
   );
@@ -21,8 +21,16 @@ class ApiService {
     _dio.interceptors.add(
       LogInterceptor(
         requestBody: true,
-        responseBody: true,
-        requestHeader: true,
+        responseBody: false,  // Don't log large response bodies
+        requestHeader: false,
+        logPrint: (obj) {
+          // Only log important info, skip large responses
+          if (obj.toString().length < 1000) {
+            print(obj);
+          } else {
+            print('${obj.toString().substring(0, 200)}... [truncated ${obj.toString().length} chars]');
+          }
+        },
       ),
     );
   }
@@ -133,6 +141,159 @@ class ApiService {
       throw Exception('Network error: ${e.message}');
     } catch (e) {
       print('Search general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Fetch all dims data from /dims endpoint (both standard and custom in one call)
+  Future<Map<String, List<dynamic>>> fetchAllDims({int retries = 2}) async {
+    int attempt = 0;
+    
+    while (attempt <= retries) {
+      try {
+        attempt++;
+        print('🔄 Fetching all dims... (attempt $attempt/${retries + 1})');
+        
+        // Use extended timeout for this large data request
+        final response = await _dio.get(
+          'dims',
+          options: Options(
+            receiveTimeout: const Duration(minutes: 5),
+            sendTimeout: const Duration(minutes: 5),
+            validateStatus: (status) => status! < 500, // Accept any status < 500
+          ),
+        );
+        
+        print('✓ Dims response received: ${response.statusCode}');
+        
+        if (response.statusCode == 200) {
+          if (response.data is Map) {
+            Map<String, List<dynamic>> result = {};
+            
+            // Extract standard_dims
+            if (response.data['standard_dims'] is List) {
+              result['standard_dims'] = List<dynamic>.from(response.data['standard_dims']);
+              print('✓ Extracted ${result['standard_dims']!.length} standard dims');
+            } else {
+              print('⚠ standard_dims not found or not a list');
+              result['standard_dims'] = [];
+            }
+            
+            // Extract custom_dims
+            if (response.data['custom_dims'] is List) {
+              result['custom_dims'] = List<dynamic>.from(response.data['custom_dims']);
+              print('✓ Extracted ${result['custom_dims']!.length} custom dims');
+            } else {
+              print('⚠ custom_dims not found or not a list');
+              result['custom_dims'] = [];
+            }
+            
+            return result;
+          }
+          throw Exception('Unexpected response format: ${response.data.runtimeType}');
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      } on DioException catch (e) {
+        print('❌ Dims DioException (attempt $attempt): ${e.type}');
+        print('❌ Error message: ${e.message}');
+        
+        // If this is the last attempt, throw the error
+        if (attempt > retries) {
+          if (e.type == DioExceptionType.connectionTimeout) {
+            throw Exception('Connection timeout after $attempt attempts. Please check your internet connection.');
+          } else if (e.type == DioExceptionType.receiveTimeout) {
+            throw Exception('Server timeout after $attempt attempts. Please try again later.');
+          } else if (e.type == DioExceptionType.sendTimeout) {
+            throw Exception('Request timeout after $attempt attempts. Please try again.');
+          } else if (e.type == DioExceptionType.connectionError) {
+            throw Exception('Connection error. Please check your internet connection.');
+          } else {
+            throw Exception('Network error: ${e.message}');
+          }
+        }
+        
+        // Wait before retrying
+        print('⏳ Waiting 2 seconds before retry...');
+        await Future.delayed(const Duration(seconds: 2));
+      } catch (e) {
+        print('❌ Dims general error (attempt $attempt): $e');
+        
+        if (attempt > retries) {
+          throw Exception('Error: $e');
+        }
+        
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    
+    throw Exception('Failed to fetch dims after ${retries + 1} attempts');
+  }
+
+  // Fetch dims data from /dims/{type} endpoint (standard or custom) - DEPRECATED, use fetchAllDims instead
+  Future<List<dynamic>> fetchDims(String type) async {
+    try {
+      print('Fetching dims: $type');
+      final response = await _dio.get('dims/$type');
+      
+      print('Dims response status: ${response.statusCode}');
+      print('Dims response data: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          return List<dynamic>.from(response.data);
+        } else if (response.data is Map && response.data['data'] is List) {
+          return List<dynamic>.from(response.data['data']);
+        }
+        throw Exception('Unexpected response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Dims DioException: ${e.type}');
+      print('Dims error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Dims general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Search across dims databases
+  Future<List<dynamic>> searchDims(String query) async {
+    try {
+      print('Searching dims: $query');
+      final response = await _dio.get('dims/search', queryParameters: {'query': query});
+      
+      print('Dims search response status: ${response.statusCode}');
+      print('Dims search response data: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          return List<dynamic>.from(response.data);
+        } else if (response.data is Map) {
+          if (response.data['results'] != null && response.data['results'] is List) {
+            return List<dynamic>.from(response.data['results']);
+          }
+          // Combine all results from different tables
+          List<dynamic> allResults = [];
+          response.data.forEach((key, value) {
+            if (value is List) {
+              allResults.addAll(value);
+            }
+          });
+          return allResults;
+        }
+        throw Exception('Unexpected search response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Dims search DioException: ${e.type}');
+      print('Dims search error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Dims search general error: $e');
       throw Exception('Error: $e');
     }
   }
