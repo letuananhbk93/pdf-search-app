@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'package:dio/dio.dart';
 
 class ApiService {
@@ -294,6 +296,150 @@ class ApiService {
       throw Exception('Network error: ${e.message}');
     } catch (e) {
       print('Dims search general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Fetch available projects list
+  Future<List<String>> fetchProjects() async {
+    try {
+      print('Fetching projects list...');
+      final response = await _dio.get('process/projects');
+      
+      print('Projects response status: ${response.statusCode}');
+      print('Projects response data: ${response.data}');
+      print('Projects response type: ${response.data.runtimeType}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          return List<String>.from(response.data);
+        } else if (response.data is Map) {
+          // If backend returns {projects: [...]} format
+          if (response.data['projects'] != null && response.data['projects'] is List) {
+            return List<String>.from(response.data['projects']);
+          }
+          // If backend returns map keys as project names
+          return response.data.keys.map((k) => k.toString()).toList();
+        }
+        throw Exception('Unexpected response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Projects DioException: ${e.type}');
+      print('Projects error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Projects general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Fetch project data for a specific project
+  Future<Map<String, List<dynamic>>> fetchProjectData(String projectName) async {
+    try {
+      print('Fetching project data for: $projectName');
+      final response = await _dio.get(
+        'process/$projectName',
+        options: Options(
+          receiveTimeout: const Duration(minutes: 5),
+          sendTimeout: const Duration(minutes: 5),
+        ),
+      );
+      
+      print('Project data response status: ${response.statusCode}');
+      print('Project data response type: ${response.data.runtimeType}');
+      print('Project data response: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is Map) {
+          Map<String, List<dynamic>> result = {};
+          
+          // Extract the nested "data" object
+          final dataMap = response.data['data'];
+          
+          if (dataMap == null) {
+            print('⚠ No "data" key found in response');
+            return result;
+          }
+          
+          if (dataMap is! Map) {
+            print('⚠ "data" is not a Map, it is ${dataMap.runtimeType}');
+            return result;
+          }
+          
+          print('Data map keys: ${dataMap.keys.toList()}');
+          
+          // Convert all table data to proper format
+          dataMap.forEach((key, value) {
+            print('Processing key: "$key", value type: ${value.runtimeType}');
+            if (value is List) {
+              result[key] = List<dynamic>.from(value);
+              print('✓ Extracted ${result[key]!.length} items from $key');
+            } else {
+              print('⚠ Skipping "$key" - value is not a List, it is ${value.runtimeType}');
+            }
+          });
+          
+          print('Final result keys: ${result.keys.toList()}');
+          return result;
+        }
+        throw Exception('Unexpected response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Project data DioException: ${e.type}');
+      print('Project data error message: ${e.message}');
+      
+      if (e.type == DioExceptionType.connectionTimeout) {
+        throw Exception('Connection timeout. Please check your internet connection.');
+      } else if (e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Server timeout. Please try again later.');
+      } else {
+        throw Exception('Network error: ${e.message}');
+      }
+    } catch (e) {
+      print('Project data general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Search process data
+  Future<List<dynamic>> searchProcess(String query) async {
+    try {
+      print('Searching process: $query');
+      final response = await _dio.get('process/search', queryParameters: {'query': query});
+      
+      print('Process search response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          return List<dynamic>.from(response.data);
+        } else if (response.data is Map) {
+          // If backend returns {results: [...]} format
+          if (response.data['results'] != null && response.data['results'] is List) {
+            return List<dynamic>.from(response.data['results']);
+          }
+          // Combine all results from different tables
+          List<dynamic> allResults = [];
+          response.data.forEach((key, value) {
+            if (value is List) {
+              allResults.addAll(value);
+            }
+          });
+          return allResults;
+        }
+        throw Exception('Unexpected search response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Process search DioException: ${e.type}');
+      print('Process search error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Process search general error: $e');
       throw Exception('Error: $e');
     }
   }

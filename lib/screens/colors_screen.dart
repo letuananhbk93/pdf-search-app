@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';  // Import Dio service
+import 'color_upload_screen.dart';
 
 class ColorsScreen extends ConsumerStatefulWidget {
   const ColorsScreen({super.key});
@@ -12,6 +13,7 @@ class ColorsScreen extends ConsumerStatefulWidget {
 class _ColorsScreenState extends ConsumerState<ColorsScreen> {
   final ApiService _apiService = ApiService();
   bool _sortAscending = true; // Track sort order
+  int _refreshKey = 0; // Key to force rebuild of tabs
 
   // Convert sup_inchart acronyms to full names
   String _convertSupInchart(String? value) {
@@ -49,6 +51,31 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.upload_file, color: Colors.white),
+            tooltip: 'Upload Excel',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ColorUploadScreen(),
+                ),
+              );
+              // Reload data after returning from upload
+              setState(() {
+                _refreshKey++; // Force rebuild
+              });
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Refresh',
+            onPressed: () {
+              setState(() {
+                _refreshKey++; // Force rebuild
+              });
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.search, color: Colors.white),
             onPressed: () {
               showSearch(
@@ -60,10 +87,12 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         ],
       ),
       body: DefaultTabController(
-        length: 5,
+        key: ValueKey(_refreshKey),
+        length: 9,
         child: Column(
           children: [
             const TabBar(
+              isScrollable: true,
               labelColor: Colors.black,
               unselectedLabelColor: Colors.black54,
               indicatorColor: Colors.red,
@@ -73,6 +102,10 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                 Tab(text: 'Metal FIN'),
                 Tab(text: 'Wood FIN'),
                 Tab(text: 'Effect Statistics'),
+                Tab(text: 'Thien Hong'),
+                Tab(text: 'Tam Viet'),
+                Tab(text: 'Dinh Thieu'),
+                Tab(text: 'MaiHome'),
               ],
             ),
             Expanded(
@@ -83,6 +116,10 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                   _buildTab('metal_fin'),
                   _buildTab('wood_fin'),
                   _buildTab('effect_color_swatch_statistics'),
+                  _buildTab('thien_hong'),
+                  _buildTab('tam_viet'),
+                  _buildTab('dinh_thieu'),
+                  _buildTab('mai_home'),
                 ],
               ),
             ),
@@ -194,8 +231,9 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
             child: DataTable(
               sortColumnIndex: 0,
               sortAscending: _sortAscending,
-              dataRowMinHeight: 90,
-              dataRowMaxHeight: 90,
+              dataRowMinHeight: 100,
+              dataRowMaxHeight: 120,
+              headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
               columns: [
                 DataColumn(
                   label: const Text(
@@ -214,6 +252,24 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
+                const DataColumn(
+                  label: Text(
+                    'Status',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const DataColumn(
+                  label: Text(
+                    'Supplier',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const DataColumn(
+                  label: Text(
+                    'Notes',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
               rows: indexedData.map((entry) {
                 final no = entry.key;
@@ -225,29 +281,57 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                                     item['swatch_name'] ?? 
                                     'N/A';
                 
-                // Build color item display with status and sup-inchart
-                String colorItemText = '$displayName\n'
-                    'Status: ${item['status'] ?? 'N/A'}\n'
-                    'Sup-inchart: ${_convertSupInchart(item['sup_inchart'])}';
+                // Determine if this is custom_color or supplier tables
+                bool isCustomColor = item['ref_color'] != null || 
+                                    item['code_items'] != null || 
+                                    item['date_signed_off'] != null ||
+                                    item['pro'] != null ||
+                                    item['po'] != null;
+                
+                // Check if this is a supplier table (thien_hong, tam_viet, dinh_thieu, mai_home)
+                bool isSupplierTable = tableName == 'thien_hong' || 
+                                       tableName == 'tam_viet' || 
+                                       tableName == 'dinh_thieu' || 
+                                       tableName == 'mai_home';
+                
+                // For custom_color and supplier tables, status is 'status', for others it's also 'status'
+                // For supplier tables, we display 'status' directly
+                String statusValue = isSupplierTable ? (item['status'] ?? '') : 
+                                     isCustomColor ? (item['pro'] ?? '') : 
+                                     (item['status'] ?? '');
+                
+                // For supplier tables, supplier field doesn't exist (or could be derived from table name)
+                // For custom_color use 'supplier', for others use sup_inchart
+                String supplierValue = isSupplierTable ? _getSupplierName(tableName) : 
+                                      isCustomColor ? (item['supplier'] ?? '') : 
+                                      _convertSupInchart(item['sup_inchart']);
+                String notes = item['notes']?.toString() ?? '';
                 
                 return DataRow(
                   cells: [
+                    DataCell(Text(no.toString()), onTap: () => _showDetailDialog(context, item)),
                     DataCell(
-                      Text(no.toString()),
-                    ),
-                    DataCell(
-                      SizedBox(
-                        width: 300,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 150),
                         child: Text(
-                          colorItemText,
-                          style: const TextStyle(fontSize: 14),
-                          maxLines: 4,
+                          displayName,
+                          softWrap: true,
+                        ),
+                      ),
+                      onTap: () => _showDetailDialog(context, item),
+                    ),
+                    DataCell(Text(statusValue), onTap: () => _showDetailDialog(context, item)),
+                    DataCell(Text(supplierValue), onTap: () => _showDetailDialog(context, item)),
+                    DataCell(
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 300),
+                        child: Text(
+                          notes,
+                          maxLines: 5,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      onTap: () {
-                        _showDetailDialog(context, item);
-                      },
+                      onTap: () => _showDetailDialog(context, item),
                     ),
                   ],
                 );
@@ -266,6 +350,16 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                         item['swatch_name'] ?? 
                         'Details';
     
+    // Determine which database/table this item is from based on available fields
+    bool isCustomColor = item['ref_color'] != null || 
+                        item['code_items'] != null || 
+                        item['date_signed_off'] != null ||
+                        item['pro'] != null ||
+                        item['po'] != null;
+    
+    // Check if this is a supplier table entry (has order_no field)
+    bool isSupplierTable = item['order_no'] != null;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -276,18 +370,42 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDetailRow('ID', item['id']),
-              _buildDetailRow('Collection', item['collection']),
-              _buildDetailRow('Ref Tone Code', item['ref_tone_code']),
-              _buildDetailRow('Name', item['name']),
-              _buildDetailRow('Color Name', item['color_name']),
-              _buildDetailRow('Name', item['color_name']),
-              _buildDetailRow('Swatch Name', item['swatch_name']),
-              _buildDetailRow('Status', item['status']),
-              _buildDetailRow('Process', item['process']),
-              _buildDetailRow('Qty', item['qty']),
-              _buildDetailRow('Approved Day', item['approved_day']),
-              _buildDetailRow('Sup-inchart', _convertSupInchart(item['sup_inchart'])),
-              _buildDetailRow('Notes', item['notes']),
+              
+              // Supplier tables specific fields (thien_hong, tam_viet, dinh_thieu, mai_home)
+              if (isSupplierTable) ...[
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Ref Color', item['ref_color']),
+                _buildDetailRow('ORDER NO.', item['order_no']),
+                _buildDetailRow('Date Signed Off', item['date_signed_off']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('Pro', item['pro']),
+                _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Notes', item['notes']),
+              ] else if (isCustomColor) ...[
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Ref Color', item['ref_color']),
+                _buildDetailRow('Code Items', item['code_items']),
+                _buildDetailRow('Date Signed Off', item['date_signed_off']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('PRO', item['pro']),
+                _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Supplier', item['supplier']),
+                _buildDetailRow('Notes', item['notes']),
+              ] else ...[
+                // Other tables (Lacquer, Metal, Wood, Effect)
+                _buildDetailRow('Collection', item['collection']),
+                _buildDetailRow('Ref Tone Code', item['ref_tone_code']),
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Color Name', item['color_name']),
+                _buildDetailRow('Swatch Name', item['swatch_name']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('Process', item['process']),
+                _buildDetailRow('Qty', item['qty']),
+                _buildDetailRow('Approved Day', item['approved_day']),
+                _buildDetailRow('Sup-inchart', _convertSupInchart(item['sup_inchart'])),
+                _buildDetailRow('Notes', item['notes']),
+              ],
+              
               _buildDetailRow('Database', item['database']),
             ],
           ),
@@ -320,6 +438,22 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         ],
       ),
     );
+  }
+
+  // Get supplier name from table name
+  String _getSupplierName(String tableName) {
+    switch (tableName) {
+      case 'thien_hong':
+        return 'THIEN HONG';
+      case 'tam_viet':
+        return 'TAM VIET';
+      case 'dinh_thieu':
+        return 'DINH THIEU';
+      case 'mai_home':
+        return 'MAIHOME';
+      default:
+        return '';
+    }
   }
 }
 
@@ -418,51 +552,83 @@ class ColorSearchDelegate extends SearchDelegate {
             );
           }
 
-          return ListView.builder(
-            itemCount: results.length,
-            itemBuilder: (context, index) {
-              final item = results[index];
-              
-              // Debug: Print all fields in the item
-              print('Search result item $index fields: ${item.keys.toList()}');
-              print('Search result item $index data: $item');
-              
-              // Handle different field names for Effect Statistics table
-              String displayName = item['name'] ?? 
-                                  item['color_name'] ?? 
-                                  item['swatch_name'] ?? 
-                                  'N/A';
-              
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: ListTile(
-                  title: Text(
-                    displayName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text('Status: ${item['status'] ?? 'N/A'}'),
-                      Text('Sup-inchart: ${_convertSupInchart(item['sup_inchart'] ?? item['supInchart'] ?? item['supplier'])}'),
-                      if (item['database'] != null || item['table_name'] != null)
-                        Text(
-                          'Database: ${item['database'] ?? item['table_name']}',
-                          style: const TextStyle(
-                            fontStyle: FontStyle.italic,
-                            color: Colors.blue,
-                          ),
-                        ),
-                    ],
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () {
-                    _showDetailDialog(context, item);
-                  },
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'Search Results (${results.length} items)',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      dataRowMinHeight: 100,
+                      dataRowMaxHeight: 120,
+                      headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
+                      columns: const [
+                        DataColumn(label: Text('No.', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Color Item', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Supplier', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.bold))),
+                      ],
+                      rows: results.asMap().entries.map((entry) {
+                        final index = entry.key + 1;
+                        final item = entry.value;
+                        
+                        // Handle different field names for Effect Statistics table
+                        String displayName = item['name'] ?? 
+                                            item['color_name'] ?? 
+                                            item['swatch_name'] ?? 
+                                            'N/A';
+                        
+                        // Determine if this is custom_color
+                        String? database = item['database'] ?? item['table_name'];
+                        bool isCustomColor = database?.toLowerCase().contains('custom') ?? false;
+                        
+                        String statusValue = isCustomColor ? (item['pro'] ?? '') : (item['status'] ?? '');
+                        String supplierValue = isCustomColor ? (item['supplier'] ?? '') : _convertSupInchart(item['sup_inchart']);
+                        String notes = item['notes']?.toString() ?? '';
+                        
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(index.toString()), onTap: () => _showDetailDialog(context, item)),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 150),
+                                child: Text(
+                                  displayName,
+                                  softWrap: true,
+                                ),
+                              ),
+                              onTap: () => _showDetailDialog(context, item),
+                            ),
+                            DataCell(Text(statusValue), onTap: () => _showDetailDialog(context, item)),
+                            DataCell(Text(supplierValue), onTap: () => _showDetailDialog(context, item)),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 300),
+                                child: Text(
+                                  notes,
+                                  maxLines: 5,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              onTap: () => _showDetailDialog(context, item),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           );
         }
 
@@ -477,31 +643,60 @@ class ColorSearchDelegate extends SearchDelegate {
   }
 
   void _showDetailDialog(BuildContext context, Map<String, dynamic> item) {
-    // Debug: Print the item data
-    print('Detail dialog item: $item');
-    print('sup_inchart value: ${item['sup_inchart']}');
-    print('Converted: ${_convertSupInchart(item['sup_inchart'])}');
+    // Determine which database/table this item is from
+    String? database = item['database'] ?? item['table_name'];
+    bool isCustomColor = database?.toLowerCase().contains('custom') ?? false;
+    
+    // Check if this is a supplier table entry (has order_no field)
+    bool isSupplierTable = item['order_no'] != null;
     
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(item['name'] ?? 'Details'),
+        title: Text(item['name'] ?? item['color_name'] ?? 'Details'),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDetailRow('ID', item['id']),
-              _buildDetailRow('Collection', item['collection']),
-              _buildDetailRow('Ref Tone Code', item['ref_tone_code']),
-              _buildDetailRow('Name', item['name']),
-              _buildDetailRow('Status', item['status']),
-              _buildDetailRow('Process', item['process']),
-              _buildDetailRow('Qty', item['qty']),
-              _buildDetailRow('Approved Day', item['approved_day']),
-              _buildDetailRow('Sup-inchart', _convertSupInchart(item['sup_inchart'])),
-              _buildDetailRow('Notes', item['notes']),
-              _buildDetailRow('Database', item['database'] ?? item['table_name']),
+              
+              // Supplier tables specific fields (thien_hong, tam_viet, dinh_thieu, mai_home)
+              if (isSupplierTable) ...[
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Ref Color', item['ref_color']),
+                _buildDetailRow('ORDER NO.', item['order_no']),
+                _buildDetailRow('Date Signed Off', item['date_signed_off']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('Pro', item['pro']),
+                _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Notes', item['notes']),
+              ] else if (isCustomColor) ...[
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Ref Color', item['ref_color']),
+                _buildDetailRow('Code Items', item['code_items']),
+                _buildDetailRow('Date Signed Off', item['date_signed_off']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('PRO', item['pro']),
+                _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Supplier', item['supplier']),
+                _buildDetailRow('Notes', item['notes']),
+              ] else ...[
+                // Other tables (Lacquer, Metal, Wood, Effect)
+                _buildDetailRow('Collection', item['collection']),
+                _buildDetailRow('Ref Tone Code', item['ref_tone_code']),
+                _buildDetailRow('Name', item['name']),
+                _buildDetailRow('Color Name', item['color_name']),
+                _buildDetailRow('Swatch Name', item['swatch_name']),
+                _buildDetailRow('Status', item['status']),
+                _buildDetailRow('Process', item['process']),
+                _buildDetailRow('Qty', item['qty']),
+                _buildDetailRow('Approved Day', item['approved_day']),
+                _buildDetailRow('Sup-inchart', _convertSupInchart(item['sup_inchart'])),
+                _buildDetailRow('Notes', item['notes']),
+              ],
+              
+              _buildDetailRow('Database', database),
             ],
           ),
         ),

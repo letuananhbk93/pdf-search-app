@@ -66,6 +66,19 @@ class HomeScreen extends StatelessWidget {
                 minimumSize: const Size(200, 50),
               ),
             ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/projects');  // Navigate to Process
+              },
+              icon: const Icon(Icons.account_tree),
+              label: const Text('PROCESS'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC00000),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(200, 50),
+              ),
+            ),
           ],
         ),
       ),

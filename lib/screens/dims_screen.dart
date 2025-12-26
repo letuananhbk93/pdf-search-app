@@ -365,6 +365,22 @@ class DimsSearchDelegate extends SearchDelegate {
             itemBuilder: (context, index) {
               final item = results[index];
               
+              // Identify type based on fields present
+              // Standard has: collection, cat, subcat, status, ngay_thuc_hien
+              // Custom has: order_no, sku, color, po_no, cbm
+              String type;
+              if (item['type'] != null) {
+                type = item['type'];
+              } else if (item['collection'] != null || item['cat'] != null || 
+                         item['subcat'] != null || item['status'] != null) {
+                type = 'standard';
+              } else if (item['order_no'] != null || item['sku'] != null || 
+                         item['color'] != null || item['po_no'] != null || item['cbm'] != null) {
+                type = 'custom';
+              } else {
+                type = 'unknown';
+              }
+              
               // Build dims string from individual measurements
               String dimsStr = 'N/A';
               if (item['length'] != null || item['width'] != null || item['height'] != null) {
@@ -377,25 +393,43 @@ class DimsSearchDelegate extends SearchDelegate {
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: ListTile(
-                  title: Text(
-                    item['product_name'] ?? 'N/A',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item['product_name'] ?? 'N/A',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: type == 'standard' ? Colors.blue : Colors.orange,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          type.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 4),
                       Text('Dims: $dimsStr'),
-                      if (item['type'] != null)
-                        Text(
-                          'Type: ${item['type']}',
-                          style: const TextStyle(
-                            fontStyle: FontStyle.italic,
-                            color: Colors.blue,
-                          ),
-                        ),
                       if (item['supplier'] != null)
                         Text('Supplier: ${item['supplier']}'),
+                      // Show additional info based on type
+                      if (type == 'standard' && item['collection'] != null)
+                        Text('Collection: ${item['collection']}'),
+                      if (type == 'custom' && item['sku'] != null)
+                        Text('SKU: ${item['sku']}'),
                     ],
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -419,7 +453,19 @@ class DimsSearchDelegate extends SearchDelegate {
   }
 
   void _showDetailDialogSearch(BuildContext context, Map<String, dynamic> item) {
-    final type = item['type'] ?? 'unknown';
+    // Identify type based on fields present
+    String type;
+    if (item['type'] != null) {
+      type = item['type'];
+    } else if (item['collection'] != null || item['cat'] != null || 
+               item['subcat'] != null || item['status'] != null) {
+      type = 'standard';
+    } else if (item['order_no'] != null || item['sku'] != null || 
+               item['color'] != null || item['po_no'] != null || item['cbm'] != null) {
+      type = 'custom';
+    } else {
+      type = 'unknown';
+    }
     
     showDialog(
       context: context,
