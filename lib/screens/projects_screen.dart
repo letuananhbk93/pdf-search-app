@@ -21,6 +21,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
   bool _isLoadingProjects = true;
   bool _isLoadingData = false;
   String? _error;
+  String? _lastUpdateDate; // Track last update date
   
   TabController? _tabController;
   List<String> _tabNames = [];
@@ -32,12 +33,43 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
   void initState() {
     super.initState();
     _loadProjects();
+    _fetchLastUpdateDate();
   }
 
   @override
   void dispose() {
     _tabController?.dispose();
     super.dispose();
+  }
+
+  // Fetch last update date from API
+  Future<void> _fetchLastUpdateDate([String? projectName]) async {
+    try {
+      print('DEBUG: Fetching update date for project: $projectName');
+      
+      String category;
+      if (projectName != null) {
+        // Format project name for API (convert to lowercase with underscores)
+        category = _formatProjectNameForApi(projectName);
+        print('DEBUG: Formatted project name for API: $category');
+      } else {
+        category = 'projects';
+      }
+      
+      print('DEBUG: Using category: $category');
+      
+      final updateInfo = await _apiService.getLastUpdateInfo(category);
+      print('DEBUG: Update info received: $updateInfo');
+      
+      setState(() {
+        _lastUpdateDate = updateInfo['last_update'] ?? 'Unknown';
+      });
+    } catch (e) {
+      print('DEBUG: Error fetching update date: $e');
+      setState(() {
+        _lastUpdateDate = 'Unknown';
+      });
+    }
   }
 
   String _formatTableName(String tableKey, String projectName) {
@@ -60,6 +92,13 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
         .trim();
   }
 
+  // Format project name for API calls (convert to lowercase with underscores)
+  String _formatProjectNameForApi(String projectName) {
+    // Convert from display name back to API format
+    // "PROJECT ABC" -> "project_abc"
+    return projectName.toLowerCase().replaceAll(' ', '_');
+  }
+
   Future<void> _loadProjects() async {
     setState(() {
       _isLoadingProjects = true;
@@ -68,6 +107,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
 
     try {
       final projects = await _apiService.fetchProjects();
+      print('DEBUG: Loaded projects: $projects');
       setState(() {
         _projects = projects;
         _isLoadingProjects = false;
@@ -115,6 +155,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
         _projectData = data;
         _isLoadingData = false;
       });
+      
+      // Fetch project-specific update date
+      print('DEBUG: About to fetch update date for project: "$projectName"');
+      _fetchLastUpdateDate(projectName);
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -125,6 +169,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
 
   void _onProjectSelected(String? projectName) {
     if (projectName != null && projectName != _selectedProject) {
+      print('DEBUG: Project selected: "$projectName"');
       setState(() {
         _selectedProject = projectName;
       });
@@ -137,47 +182,97 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'PROCESS',
+          'TIMELINE',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: const Color(0xFFC00000),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.upload_file, color: Colors.white),
-            tooltip: 'Upload Excel',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProcessUploadScreen(),
+          // Last update date display
+          if (_lastUpdateDate != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+              child: Center(
+                child: Text(
+                  'Updated: $_lastUpdateDate',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              );
-              // Reload data after returning from upload
-              if (_selectedProject != null) {
-                _loadProjectData(_selectedProject!);
+              ),
+            ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            tooltip: 'Menu',
+            onSelected: (String choice) {
+              switch (choice) {
+                case 'upload':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProcessUploadScreen(),
+                    ),
+                  ).then((_) {
+                    // Reload data and update date after returning from upload
+                    if (_selectedProject != null) {
+                      _loadProjectData(_selectedProject!);
+                    }
+                    // Update date will be fetched in _loadProjectData
+                  });
+                  break;
+                case 'refresh':
+                  if (_selectedProject != null) {
+                    _loadProjectData(_selectedProject!);
+                  } else {
+                    _loadProjects();
+                  }
+                  // Update date will be fetched in _loadProjectData or use general
+                  if (_selectedProject == null) {
+                    _fetchLastUpdateDate();
+                  }
+                  break;
+                case 'search':
+                  showSearch(
+                    context: context,
+                    delegate: ProcessSearchDelegate(),
+                  );
+                  break;
               }
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            tooltip: 'Refresh',
-            onPressed: () {
-              if (_selectedProject != null) {
-                _loadProjectData(_selectedProject!);
-              } else {
-                _loadProjects();
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {
-              showSearch(
-                context: context,
-                delegate: ProcessSearchDelegate(),
-              );
-            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'upload',
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Upload Excel'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Refresh'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'search',
+                child: Row(
+                  children: [
+                    Icon(Icons.search, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Search'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
         bottom: _selectedProject != null && _tabController != null

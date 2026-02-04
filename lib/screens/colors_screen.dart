@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';  // Import Dio service
 import 'color_upload_screen.dart';
+import 'edit_color_screen.dart';
+import 'all_colors_history_screen.dart';
 
 class ColorsScreen extends ConsumerStatefulWidget {
   const ColorsScreen({super.key});
@@ -14,6 +16,28 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
   final ApiService _apiService = ApiService();
   bool _sortAscending = true; // Track sort order
   int _refreshKey = 0; // Key to force rebuild of tabs
+  String? _lastUpdateDate; // Track last update date
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLastUpdateDate();
+  }
+
+  // Fetch last update date from API
+  Future<void> _fetchLastUpdateDate() async {
+    try {
+      // You'll need to add this method to your ApiService
+      final updateInfo = await _apiService.getLastUpdateInfo('colors');
+      setState(() {
+        _lastUpdateDate = updateInfo['last_update'] ?? 'Unknown';
+      });
+    } catch (e) {
+      setState(() {
+        _lastUpdateDate = 'Unknown';
+      });
+    }
+  }
 
   // Convert sup_inchart acronyms to full names
   String _convertSupInchart(String? value) {
@@ -50,39 +74,104 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         backgroundColor: const Color(0xFFC00000),  // Bordeaux theme
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.upload_file, color: Colors.white),
-            tooltip: 'Upload Excel',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ColorUploadScreen(),
+          // Last update date display
+          if (_lastUpdateDate != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+              child: Center(
+                child: Text(
+                  'Updated: $_lastUpdateDate',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              );
-              // Reload data after returning from upload
-              setState(() {
-                _refreshKey++; // Force rebuild
-              });
+              ),
+            ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            tooltip: 'Menu',
+            onSelected: (String choice) {
+              switch (choice) {
+                case 'history':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AllColorsHistoryScreen(),
+                    ),
+                  );
+                  break;
+                case 'upload':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ColorUploadScreen(),
+                    ),
+                  ).then((_) {
+                    // Reload data and update date after returning from upload
+                    setState(() {
+                      _refreshKey++; // Force rebuild
+                    });
+                    _fetchLastUpdateDate(); // Refresh the update date
+                  });
+                  break;
+                case 'refresh':
+                  setState(() {
+                    _refreshKey++; // Force rebuild
+                  });
+                  _fetchLastUpdateDate(); // Also refresh the update date
+                  break;
+                case 'search':
+                  showSearch(
+                    context: context,
+                    delegate: ColorSearchDelegate(),
+                  );
+                  break;
+              }
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            tooltip: 'Refresh',
-            onPressed: () {
-              setState(() {
-                _refreshKey++; // Force rebuild
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {
-              showSearch(
-                context: context,
-                delegate: ColorSearchDelegate(),
-              );
-            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'history',
+                child: Row(
+                  children: [
+                    Icon(Icons.history, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('View All History'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'upload',
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Upload Excel'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Refresh'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'search',
+                child: Row(
+                  children: [
+                    Icon(Icons.search, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Search'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -270,6 +359,12 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
+                const DataColumn(
+                  label: Text(
+                    'Actions',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
               rows: indexedData.map((entry) {
                 final no = entry.key;
@@ -332,6 +427,13 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                         ),
                       ),
                       onTap: () => _showDetailDialog(context, item),
+                    ),
+                    DataCell(
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () => _navigateToEditScreen(context, item, tableName),
+                        tooltip: 'Edit',
+                      ),
                     ),
                   ],
                 );
@@ -455,6 +557,26 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         return '';
     }
   }
+
+  // Navigate to edit screen
+  void _navigateToEditScreen(BuildContext context, Map<String, dynamic> colorItem, String tableName) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditColorScreen(
+          colorItem: colorItem,
+          tableName: tableName,
+        ),
+      ),
+    );
+    
+    // If changes were made, refresh the list
+    if (result == true) {
+      setState(() {
+        _refreshKey++; // Force rebuild to refresh data
+      });
+    }
+  }
 }
 
 // Search delegate for searching across all color databases
@@ -576,6 +698,7 @@ class ColorSearchDelegate extends SearchDelegate {
                         DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
                         DataColumn(label: Text('Supplier', style: TextStyle(fontWeight: FontWeight.bold))),
                         DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
                       rows: results.asMap().entries.map((entry) {
                         final index = entry.key + 1;
@@ -594,6 +717,9 @@ class ColorSearchDelegate extends SearchDelegate {
                         String statusValue = isCustomColor ? (item['pro'] ?? '') : (item['status'] ?? '');
                         String supplierValue = isCustomColor ? (item['supplier'] ?? '') : _convertSupInchart(item['sup_inchart']);
                         String notes = item['notes']?.toString() ?? '';
+                        
+                        // Determine the table name for edit navigation
+                        String tableName = database ?? 'lacquer_fin';
                         
                         return DataRow(
                           cells: [
@@ -620,6 +746,13 @@ class ColorSearchDelegate extends SearchDelegate {
                                 ),
                               ),
                               onTap: () => _showDetailDialog(context, item),
+                            ),
+                            DataCell(
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                onPressed: () => _navigateToEditScreen(context, item, tableName),
+                                tooltip: 'Edit',
+                              ),
                             ),
                           ],
                         );
@@ -728,5 +861,24 @@ class ColorSearchDelegate extends SearchDelegate {
         ],
       ),
     );
+  }
+
+  // Navigate to edit screen (for search delegate)
+  void _navigateToEditScreen(BuildContext context, Map<String, dynamic> colorItem, String tableName) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditColorScreen(
+          colorItem: colorItem,
+          tableName: tableName,
+        ),
+      ),
+    );
+    
+    // If changes were made, close the search and let the main screen refresh
+    if (result == true) {
+      // You can optionally show a message here
+      // The main screen will be refreshed when the search is closed
+    }
   }
 }

@@ -6,6 +6,7 @@ import 'screens/search_screen.dart';
 import 'screens/colors_screen.dart';
 import 'screens/dims_screen.dart';
 import 'screens/projects_screen.dart';
+import 'screens/production_plan_screen.dart';
 
 
 void main() {
@@ -28,6 +29,7 @@ class MyApp extends StatelessWidget {
         '/colors': (context) => const ColorsScreen(),
         '/dims': (context) => const DimsScreen(),
         '/projects': (context) => const ProjectsScreen(),
+        '/production-plan': (context) => const ProductionPlanScreen(),
       },
     );
   }

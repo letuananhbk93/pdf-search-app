@@ -23,12 +23,36 @@ class _ProcessUploadScreenState extends State<ProcessUploadScreen> {
       _uploadResult = null;
     });
 
-    PlatformFile? file = await _uploadService.pickExcelFile();
-    if (file != null) {
-      setState(() {
-        _selectedFile = file;
-        _statusMessage = 'File selected: ${file.name}';
-      });
+    try {
+      PlatformFile? file = await _uploadService.pickExcelFile();
+      if (file != null) {
+        setState(() {
+          _selectedFile = file;
+          _statusMessage = 'File selected: ${file.name}';
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No file selected. Please try again.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _statusMessage = '❌ Error selecting file: $e';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 

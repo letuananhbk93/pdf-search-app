@@ -1,4 +1,5 @@
-import 'dart:typed_data';
+// ignore_for_file: avoid_print
+
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -15,19 +16,26 @@ class ProcessUploadService {
   /// Pick Excel file from device
   Future<PlatformFile?> pickExcelFile() async {
     try {
+      print('🔍 Starting file picker...');
+      print('Platform: ${kIsWeb ? "Web" : "Native"}');
+      
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls'],
         withData: kIsWeb, // Load bytes for web
+        allowMultiple: false,
       );
 
       if (result != null) {
+        print('✅ File selected: ${result.files.single.name}');
         return result.files.single;
       }
+      print('⚠️ No file selected');
       return null;
-    } catch (e) {
-      print('Error picking file: $e');
-      return null;
+    } catch (e, stackTrace) {
+      print('❌ Error picking file: $e');
+      print('Stack trace: $stackTrace');
+      rethrow; // Re-throw to handle in UI
     }
   }
 

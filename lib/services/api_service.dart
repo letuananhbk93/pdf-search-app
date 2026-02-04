@@ -443,4 +443,296 @@ class ApiService {
       throw Exception('Error: $e');
     }
   }
+
+  // Update color item
+  Future<void> updateColor(
+    String tableName,
+    int colorId,
+    Map<String, dynamic> updatedData,
+    String changedBy,
+  ) async {
+    try {
+      print('🔄 Updating color...');
+      print('📋 Table name: $tableName');
+      print('🆔 Color ID: $colorId');
+      print('👤 Changed by: $changedBy');
+      print('📦 Updated data: $updatedData');
+      
+      String endpoint = 'colors/$tableName/$colorId';
+      print('🌐 Full URL: ${_dio.options.baseUrl}$endpoint?changed_by=$changedBy');
+      
+      final response = await _dio.put(
+        endpoint,
+        queryParameters: {'changed_by': changedBy},
+        data: updatedData,
+      );
+      
+      print('✅ Update response status: ${response.statusCode}');
+      print('📄 Update response data: ${response.data}');
+      
+      if (response.statusCode != 200) {
+        throw Exception('Server error: ${response.statusCode} - ${response.data}');
+      }
+    } on DioException catch (e) {
+      print('❌ Update DioException: ${e.type}');
+      print('❌ Update error message: ${e.message}');
+      print('❌ Response: ${e.response?.data}');
+      print('❌ Status code: ${e.response?.statusCode}');
+      print('❌ Request URL: ${e.requestOptions.uri}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('❌ Update general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get color history
+  Future<List<Map<String, dynamic>>> getColorHistory(
+    String tableName,
+    int colorId,
+  ) async {
+    try {
+      print('Getting color history: $tableName/$colorId');
+      final response = await _dio.get('colors/$tableName/$colorId/history');
+      
+      print('History response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          return List<Map<String, dynamic>>.from(response.data);
+        }
+        throw Exception('Unexpected history response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('History DioException: ${e.type}');
+      print('History error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('History general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get all colors history across all tables with filters and pagination
+  Future<Map<String, dynamic>> getAllColorsHistory({
+    int limit = 50,
+    int offset = 0,
+    String? tableFilter,
+    String? actionFilter,
+    String? changedByFilter,
+  }) async {
+    try {
+      print('Getting all colors history...');
+      
+      Map<String, dynamic> queryParams = {
+        'limit': limit.toString(),
+        'offset': offset.toString(),
+      };
+      
+      if (tableFilter != null && tableFilter.isNotEmpty && tableFilter != 'all') {
+        queryParams['table_filter'] = tableFilter;
+      }
+      
+      if (actionFilter != null && actionFilter.isNotEmpty && actionFilter != 'all') {
+        queryParams['action_filter'] = actionFilter;
+      }
+      
+      if (changedByFilter != null && changedByFilter.isNotEmpty) {
+        queryParams['changed_by_filter'] = changedByFilter;
+      }
+      
+      print('Query params: $queryParams');
+      
+      final response = await _dio.get(
+        'colors/history/all',
+        queryParameters: queryParams,
+      );
+      
+      print('All history response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is Map) {
+          return Map<String, dynamic>.from(response.data);
+        }
+        throw Exception('Unexpected all history response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('All history DioException: ${e.type}');
+      print('All history error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('All history general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get last update information
+  Future<Map<String, dynamic>> getLastUpdateInfo([String? category]) async {
+    try {
+      print('Fetching last update info for category: ${category ?? 'general'}');
+      
+      final queryParams = <String, dynamic>{};
+      if (category != null) {
+        queryParams['category'] = category;
+      }
+      
+      final url = 'last-update${queryParams.isNotEmpty ? '?' + queryParams.entries.map((e) => '${e.key}=${e.value}').join('&') : ''}';
+      print('API URL: ${_dio.options.baseUrl}$url');
+      
+      final response = await _dio.get('last-update', queryParameters: queryParams);
+      
+      print('Last update response status: ${response.statusCode}');
+      print('Last update response data: ${response.data}');
+      print('Last update response data type: ${response.data.runtimeType}');
+      if (response.data is Map) {
+        print('Response keys: ${response.data.keys.toList()}');
+        print('last_update field: ${response.data['last_update']}');
+      }
+      
+      if (response.statusCode == 200) {
+        if (response.data is Map) {
+          return Map<String, dynamic>.from(response.data);
+        }
+        throw Exception('Unexpected last update response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Last update DioException: ${e.type}');
+      print('Last update error message: ${e.message}');
+      print('Last update response: ${e.response?.data}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Last update general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get all production plan projects
+  Future<List<String>> getProductionPlanProjects() async {
+    try {
+      print('Fetching production plan projects');
+      final response = await _dio.get('production-plan/projects');
+      
+      print('Production plan projects response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is Map && response.data['projects'] is List) {
+          return List<String>.from(response.data['projects']);
+        } else if (response.data is List) {
+          return List<String>.from(response.data);
+        }
+        throw Exception('Unexpected production plan projects response format');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Production plan projects DioException: ${e.type}');
+      print('Production plan projects error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Production plan projects general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get Gantt data for a specific project with view mode
+  Future<Map<String, dynamic>> getGanttData(String poNumber, {String viewMode = 'week'}) async {
+    try {
+      print('Fetching Gantt data for: $poNumber with view mode: $viewMode');
+      final response = await _dio.get('production-plan/$poNumber/gantt?view_mode=$viewMode');
+      
+      print('Gantt data response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        if (response.data is Map) {
+          return Map<String, dynamic>.from(response.data);
+        }
+        throw Exception('Unexpected Gantt data response format');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Gantt data DioException: ${e.type}');
+      print('Gantt data error message: ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Gantt data general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get view modes information
+  Future<Map<String, dynamic>?> getViewModes() async {
+    try {
+      final response = await _dio.get('production-plan/view-modes');
+      
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(response.data);
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching view modes: $e');
+      return null;
+    }
+  }
+
+  // Get project phases
+  Future<List<Map<String, dynamic>>> getProjectPhases(String poNumber) async {
+    try {
+      print('Fetching project phases for: $poNumber');
+      final response = await _dio.get('production-plan/$poNumber');
+      
+      print('Project phases response status: ${response.statusCode}');
+      print('Project phases response data: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        print('Raw response data: ${response.data}');
+        if (response.data is Map && response.data['phases'] is List) {
+          final phases = List<Map<String, dynamic>>.from(response.data['phases']);
+          print('Successfully parsed ${phases.length} phases from phases key');
+          for (int i = 0; i < phases.length && i < 3; i++) {
+            print('Phase $i sample: ${phases[i]}');
+          }
+          return phases;
+        } else if (response.data is List) {
+          final phases = List<Map<String, dynamic>>.from(response.data);
+          print('Successfully parsed ${phases.length} phases from direct list');
+          for (int i = 0; i < phases.length && i < 3; i++) {
+            print('Phase $i sample: ${phases[i]}');
+          }
+          return phases;
+        } else if (response.data is Map) {
+          print('Response is a map, looking for phases data...');
+          // Try to find phases in any nested structure
+          final data = response.data as Map<String, dynamic>;
+          for (var key in data.keys) {
+            if (data[key] is List) {
+              final phases = List<Map<String, dynamic>>.from(data[key]);
+              print('Found ${phases.length} phases under key: $key');
+              return phases;
+            }
+          }
+          // If no list found, return empty list
+          print('No phases list found in response');
+          return [];
+        }
+        throw Exception('Unexpected project phases response format: ${response.data.runtimeType}');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Project phases DioException: ${e.type}');
+      print('Project phases error message: ${e.message}');
+      print('Project phases response: ${e.response?.data}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      print('Project phases general error: $e');
+      throw Exception('Error: $e');
+    }
+  }
 }

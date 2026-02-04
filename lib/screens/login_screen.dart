@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,13 +13,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   String? _errorMessage;
 
-  void _login() {
+  void _login() async {
     final id = _idController.text.trim();
     final password = _passwordController.text.trim();
 
     if (id == 'prodtlcvietnam' && password == 'TATNTDHK') {
+      // Save user email to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_email', 'prodtlcvietnam@tlcvietnam.com');
+      
       // Navigate to main screen
-      Navigator.pushReplacementNamed(context, '/main');
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/main');
+      }
     } else {
       setState(() {
         _errorMessage = 'Invalid ID or password';
