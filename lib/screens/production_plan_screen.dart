@@ -357,7 +357,11 @@ class _ProductionPlanScreenState extends ConsumerState<ProductionPlanScreen> {
               });
               // Reload data when view mode changes
               if (_selectedProject != null) {
-                _loadProjectData(_selectedProject!);
+                if (_selectedProject == 'Overall') {
+                  _loadOverallData();
+                } else {
+                  _loadProjectData(_selectedProject!);
+                }
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<ViewMode>>[

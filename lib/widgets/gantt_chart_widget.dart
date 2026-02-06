@@ -503,27 +503,6 @@ class _GanttChartWidgetState extends State<GanttChartWidget> {
     );
   }
 
-  // Get appropriate timeline description for a phase based on view mode
-  String _getTimelineDescription(int phaseIndex) {
-    if (widget.extendedPhases == null || phaseIndex >= widget.extendedPhases!.length) {
-      return '';
-    }
-    
-    final extendedPhase = widget.extendedPhases![phaseIndex];
-    
-    switch (widget.viewMode) {
-      case ViewMode.week:
-        // Week view: show only date range like (Nov 10 - Nov 16)
-        if (extendedPhase.weekStart != null && extendedPhase.weekEnd != null) {
-          return '(${extendedPhase.weekStart} - ${extendedPhase.weekEnd})';
-        }
-        return extendedPhase.weekLabel?.replaceAll(RegExp(r'^Week \d+ '), '') ?? '';
-      case ViewMode.month:
-        // Month view: no timeline description needed
-        return '';
-    }
-  }
-
   // Get duration info based on view mode
   String _getDurationInfo(int phaseIndex) {
     if (phaseIndex >= widget.phases.length) {
