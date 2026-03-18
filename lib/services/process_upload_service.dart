@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class ProcessUploadService {
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',
+      baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',  // Production backend
       connectTimeout: const Duration(minutes: 5),
       receiveTimeout: const Duration(minutes: 5),
     ),

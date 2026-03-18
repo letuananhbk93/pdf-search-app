@@ -11,7 +11,7 @@ class ApiService {
 
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',  // Mock base URL
+      baseUrl: 'https://pdf-search-backend-tlcvietnam-282948b11d32.herokuapp.com/',  // Production backend
       connectTimeout: const Duration(seconds: 120),
       receiveTimeout: const Duration(seconds: 120),
       headers: {'Content-Type': 'application/json'},
@@ -580,7 +580,7 @@ class ApiService {
         queryParams['category'] = category;
       }
       
-      final url = 'last-update${queryParams.isNotEmpty ? '?' + queryParams.entries.map((e) => '${e.key}=${e.value}').join('&') : ''}';
+      final url = 'last-update${queryParams.isNotEmpty ? '?${queryParams.entries.map((e) => '${e.key}=${e.value}').join('&')}' : ''}';
       print('API URL: ${_dio.options.baseUrl}$url');
       
       final response = await _dio.get('last-update', queryParameters: queryParams);
@@ -733,6 +733,146 @@ class ApiService {
     } catch (e) {
       print('Project phases general error: $e');
       throw Exception('Error: $e');
+    }
+  }
+
+  // ======== DRAWINGS UPLOAD & UPDATE METHODS ========
+  
+  // Upload multiple drawings (Web Compatible)
+  Future<Map<String, dynamic>> uploadDrawingsFromFiles(List files) async {
+    try {
+      var formData = FormData();
+      
+      // Add multiple files to FormData (Web Compatible)
+      for (var file in files) {
+        if (file.bytes != null) { // Web platform
+          formData.files.add(MapEntry(
+            'files', 
+            MultipartFile.fromBytes(
+              file.bytes!,
+              filename: file.name,
+            )
+          ));
+        } else if (file.path != null) { // Mobile/Desktop platform
+          formData.files.add(MapEntry(
+            'files', 
+            await MultipartFile.fromFile(file.path!, filename: file.name)
+          ));
+        } else {
+          throw Exception('File ${file.name} has no bytes or path available');
+        }
+      }
+      
+      print('Uploading ${files.length} drawings...');
+      
+      final response = await _dio.post(
+        'drawings/upload',  // Exact backend endpoint
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(minutes: 10), // Extended timeout for file uploads
+        ),
+      );
+      
+      if (response.statusCode == 200) {
+        print('Upload successful: ${response.data}');
+        return response.data;
+      } else {
+        throw Exception('Upload failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Upload DioException: ${e.type}');
+      print('Upload error message: ${e.message}');
+      print('Upload response: ${e.response?.data}');
+      throw Exception('Upload error: ${e.message}');
+    } catch (e) {
+      print('Upload general error: $e');
+      throw Exception('Upload error: $e');
+    }
+  }
+  
+  // Search drawings by name (uses working search endpoint)
+  Future<List<Map<String, dynamic>>> searchDrawings(String query, {int limit = 10}) async {
+    try {
+      print('Searching drawings: $query');
+      final response = await _dio.get(
+        'search',  // Use the working search endpoint (same as main search)
+        queryParameters: {
+          'query': query,
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        // The original search returns a list directly
+        if (response.data is List) {
+          final results = List<Map<String, dynamic>>.from(response.data);
+          print('Found ${results.length} drawings');
+          return results;
+        } else {
+          print('Unexpected response format: ${response.data}');
+          return [];
+        }
+      } else {
+        throw Exception('Search failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Search drawings DioException: ${e.type}');
+      print('Search drawings error: ${e.message}');
+      throw Exception('Search error: ${e.message}');
+    } catch (e) {
+      print('Search drawings general error: $e');
+      throw Exception('Search error: $e');
+    }
+  }
+  
+  // Update (replace) a specific drawing (Web Compatible)
+  Future<Map<String, dynamic>> updateDrawingFromFile(int drawingId, dynamic platformFile) async {
+    try {
+      late MultipartFile multipartFile;
+      
+      if (platformFile.bytes != null) { // Web platform
+        multipartFile = MultipartFile.fromBytes(
+          platformFile.bytes!,
+          filename: platformFile.name,
+        );
+      } else if (platformFile.path != null) { // Mobile/Desktop platform
+        multipartFile = await MultipartFile.fromFile(
+          platformFile.path!, 
+          filename: platformFile.name
+        );
+      } else {
+        throw Exception('File ${platformFile.name} has no bytes or path available');
+      }
+      
+      var formData = FormData.fromMap({
+        'file': multipartFile
+      });
+      
+      print('Updating drawing ID: $drawingId with file: ${platformFile.name}');
+      
+      final response = await _dio.post(
+        'drawings/update/$drawingId',  // Exact backend endpoint
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(minutes: 10), // Extended timeout for file uploads
+        ),
+      );
+      
+      if (response.statusCode == 200) {
+        print('Drawing update successful: ${response.data}');
+        return response.data;
+      } else {
+        throw Exception('Update failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Update drawing DioException: ${e.type}');
+      print('Update drawing error: ${e.message}');
+      print('Update drawing response: ${e.response?.data}');
+      throw Exception('Update error: ${e.message}');
+    } catch (e) {
+      print('Update drawing general error: $e');
+      throw Exception('Update error: $e');
     }
   }
 }
