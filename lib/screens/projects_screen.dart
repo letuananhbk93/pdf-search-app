@@ -5,6 +5,69 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';
 import 'process_upload_screen.dart';
 
+const double _kProcessRowHeight = 110;
+
+/// Excel cell fill ("#RRGGBB") stored by the backend; null when the cell had no fill.
+Color? _parseExcelColor(dynamic value) {
+  final match = RegExp(r'^#?([0-9A-Fa-f]{6})$').firstMatch(value?.toString().trim() ?? '');
+  if (match == null) return null;
+  return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
+}
+
+/// "dd/mm" for date values (also handles ISO strings from older uploads); any other text is shown as is.
+String _formatQcDate(dynamic value) {
+  final text = value?.toString().trim() ?? '';
+  if (text.isEmpty || text == 'NaT' || text == 'None' || text == 'nan') return '';
+  final iso = RegExp(r'^\d{4}-(\d{2})-(\d{2})(?:[ T]\d{2}:\d{2}:\d{2}.*)?$').firstMatch(text);
+  if (iso != null) return '${iso.group(2)}/${iso.group(1)}';
+  return text;
+}
+
+/// Sorts dd/mm values chronologically (month first), with non-date text after them.
+String _qcSortKey(String formatted) {
+  final match = RegExp(r'^(\d{1,2})/(\d{1,2})$').firstMatch(formatted);
+  if (match == null) return '1$formatted';
+  return '0${match.group(2)!.padLeft(2, '0')}${match.group(1)!.padLeft(2, '0')}';
+}
+
+DataCell _processCell({
+  required String text,
+  required double width,
+  required VoidCallback onTap,
+  Color? color,
+  int? maxLines,
+}) {
+  final darkFill = color != null && color.computeLuminance() < 0.4;
+  return DataCell(
+    Container(
+      width: width,
+      height: _kProcessRowHeight,
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        softWrap: true,
+        maxLines: maxLines,
+        overflow: maxLines != null ? TextOverflow.ellipsis : null,
+        style: darkFill ? const TextStyle(color: Colors.white) : null,
+      ),
+    ),
+    onTap: onTap,
+  );
+}
+
+/// Header label sized so header + sort arrow equal the body cell width.
+Widget _processHeader(String label, double width) {
+  return Padding(
+    padding: const EdgeInsets.only(left: 12),
+    child: SizedBox(
+      width: width - 12 - 18,
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+    ),
+  );
+}
+
 class ProjectsScreen extends ConsumerStatefulWidget {
   const ProjectsScreen({super.key});
 
@@ -28,6 +91,16 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
   
   int? _sortColumnIndex;
   bool _sortAscending = true;
+
+  static const _columns = [
+    (label: 'Product', width: 160.0),
+    (label: 'Order', width: 130.0),
+    (label: 'Colour', width: 190.0),
+    (label: 'Carcass QC', width: 130.0),
+    (label: 'Final QC', width: 120.0),
+    (label: 'QC Notes', width: 160.0),
+    (label: 'Notes', width: 160.0),
+  ];
 
   @override
   void initState() {
@@ -456,8 +529,8 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
             comparison = _cleanColourText(a['colour']?.toString()).compareTo(_cleanColourText(b['colour']?.toString()));
             break;
           case 3: // Carcass QC
-            final aValue = a['carcass_qc_day']?.toString() ?? '';
-            final bValue = b['carcass_qc_day']?.toString() ?? '';
+            final aValue = _formatQcDate(a['carcass_qc_day']);
+            final bValue = _formatQcDate(b['carcass_qc_day']);
             
             final aShipTo = a['ship_to']?.toString() ?? '';
             final aOrderNo = a['order_no']?.toString() ?? '';
@@ -499,13 +572,13 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
               if (aPriority != bPriority) {
                 comparison = aPriority.compareTo(bPriority);
               } else {
-                comparison = aValue.compareTo(bValue);
+                comparison = _qcSortKey(aValue).compareTo(_qcSortKey(bValue));
               }
             }
             break;
           case 4: // Final QC
-            final aValue = a['final_qc_date']?.toString() ?? '';
-            final bValue = b['final_qc_date']?.toString() ?? '';
+            final aValue = _formatQcDate(a['final_qc_date']);
+            final bValue = _formatQcDate(b['final_qc_date']);
             
             final aShipTo = a['ship_to']?.toString() ?? '';
             final aOrderNo = a['order_no']?.toString() ?? '';
@@ -547,7 +620,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
               if (aPriority != bPriority) {
                 comparison = aPriority.compareTo(bPriority);
               } else {
-                comparison = aValue.compareTo(bValue);
+                comparison = _qcSortKey(aValue).compareTo(_qcSortKey(bValue));
               }
             }
             break;
@@ -580,162 +653,40 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
               child: DataTable(
                 sortColumnIndex: _sortColumnIndex,
                 sortAscending: _sortAscending,
-                dataRowMinHeight: 100,
-                dataRowMaxHeight: 120,
+                columnSpacing: 0,
+                horizontalMargin: 0,
+                dataRowMinHeight: _kProcessRowHeight,
+                dataRowMaxHeight: _kProcessRowHeight,
                 headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
                 columns: [
-                  DataColumn(
-                    label: const Text('Product', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('Order', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('Colour', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('Carcass QC', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('Final QC', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('QC Notes', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
-                  DataColumn(
-                    label: const Text('Notes', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortColumnIndex = columnIndex;
-                        _sortAscending = ascending;
-                      });
-                    },
-                  ),
+                  for (final column in _columns)
+                    DataColumn(
+                      label: _processHeader(column.label, column.width),
+                      onSort: (columnIndex, ascending) {
+                        setState(() {
+                          _sortColumnIndex = columnIndex;
+                          _sortAscending = ascending;
+                        });
+                      },
+                    ),
                 ],
                 rows: sortedData.map((item) {
-                  // Prepare data
-                  final product = item['product']?.toString() ?? '';
                   final shipTo = item['ship_to']?.toString() ?? '';
                   final orderNo = item['order_no']?.toString() ?? '';
-                  final order = (shipTo.isNotEmpty && orderNo.isNotEmpty) 
-                      ? '$shipTo-$orderNo' 
+                  final order = (shipTo.isNotEmpty && orderNo.isNotEmpty)
+                      ? '$shipTo-$orderNo'
                       : '$shipTo$orderNo';
-                  final colour = _cleanColourText(item['colour']?.toString());
-                  final carcassQc = item['carcass_qc_day']?.toString() ?? '';
-                  final finalQc = item['final_qc_date']?.toString() ?? '';
-                  final qcNotes = item['qc_notes']?.toString() ?? '';
-                  final notes = item['notes']?.toString() ?? '';
-                  
+                  void open() => _showDetailDialog(tableName, item);
+
                   return DataRow(
                     cells: [
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 100),
-                          child: Text(
-                            product,
-                            softWrap: true,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 120),
-                          child: Text(
-                            order,
-                            softWrap: true,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 200),
-                          child: Text(
-                            colour,
-                            softWrap: true,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 100),
-                          child: Text(
-                            carcassQc,
-                            softWrap: true,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 100),
-                          child: Text(
-                            finalQc,
-                            softWrap: true,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 100),
-                          child: Text(
-                            qcNotes,
-                            softWrap: true,
-                            maxLines: 5,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 100),
-                          child: Text(
-                            notes,
-                            softWrap: true,
-                            maxLines: 5,
-                          ),
-                        ),
-                        onTap: () => _showDetailDialog(tableName, item),
-                      ),
+                      _processCell(text: item['product']?.toString() ?? '', width: _columns[0].width, onTap: open),
+                      _processCell(text: order, width: _columns[1].width, color: _parseExcelColor(item['order_color']), onTap: open),
+                      _processCell(text: _cleanColourText(item['colour']?.toString()), width: _columns[2].width, onTap: open),
+                      _processCell(text: _formatQcDate(item['carcass_qc_day']), width: _columns[3].width, color: _parseExcelColor(item['carcass_color']), onTap: open),
+                      _processCell(text: _formatQcDate(item['final_qc_date']), width: _columns[4].width, color: _parseExcelColor(item['final_color']), onTap: open),
+                      _processCell(text: item['qc_notes']?.toString() ?? '', width: _columns[5].width, maxLines: 5, onTap: open),
+                      _processCell(text: item['notes']?.toString() ?? '', width: _columns[6].width, maxLines: 5, onTap: open),
                     ],
                   );
                 }).toList(),
@@ -780,7 +731,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: item.entries
-                .where((entry) => entry.key != 'image') // Exclude image field
+                .where((entry) => entry.key != 'image' && !entry.key.endsWith('_color')) // Exclude image and fill-color fields
                 .map((entry) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
@@ -795,7 +746,11 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
                       ),
                     ),
                     Expanded(
-                      child: Text(entry.value?.toString() ?? 'N/A'),
+                      child: Text(
+                        (entry.key == 'carcass_qc_day' || entry.key == 'final_qc_date')
+                            ? _formatQcDate(entry.value)
+                            : (entry.value?.toString() ?? 'N/A'),
+                      ),
                     ),
                   ],
                 ),
@@ -817,6 +772,17 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> with TickerProv
 // Search delegate for process data
 class ProcessSearchDelegate extends SearchDelegate {
   final ApiService _apiService = ApiService();
+
+  static const _columns = [
+    (label: 'Product', width: 160.0),
+    (label: 'Order', width: 130.0),
+    (label: 'Supplier', width: 150.0),
+    (label: 'Colour', width: 190.0),
+    (label: 'Carcass QC', width: 130.0),
+    (label: 'Final QC', width: 120.0),
+    (label: 'QC Notes', width: 160.0),
+    (label: 'Notes', width: 160.0),
+  ];
 
   String _cleanColourText(String? colour) {
     if (colour == null || colour.isEmpty) return '';
@@ -909,120 +875,36 @@ class ProcessSearchDelegate extends SearchDelegate {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      dataRowMinHeight: 100,
-                      dataRowMaxHeight: 120,
+                      columnSpacing: 0,
+                      horizontalMargin: 0,
+                      dataRowMinHeight: _kProcessRowHeight,
+                      dataRowMaxHeight: _kProcessRowHeight,
                       headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
-                      columns: const [
-                        DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Order', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Supplier', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Colour', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Carcass QC', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Final QC', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('QC Notes', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Notes', style: TextStyle(fontWeight: FontWeight.bold))),
+                      columns: [
+                        for (final column in _columns)
+                          DataColumn(label: _processHeader(column.label, column.width)),
                       ],
                       rows: results.map((item) {
-                        // Prepare data
-                        final product = item['product']?.toString() ?? '';
                         final shipTo = item['ship_to']?.toString() ?? '';
                         final orderNo = item['order_no']?.toString() ?? '';
-                        final order = (shipTo.isNotEmpty && orderNo.isNotEmpty) 
-                            ? '$shipTo-$orderNo' 
+                        final order = (shipTo.isNotEmpty && orderNo.isNotEmpty)
+                            ? '$shipTo-$orderNo'
                             : '$shipTo$orderNo';
                         // Format supplier/table name: "anh_thiep" -> "ANH THIEP"
                         final tableName = item['table_name']?.toString() ?? item['database']?.toString() ?? '';
                         final supplier = tableName.replaceAll('_', ' ').toUpperCase();
-                        final colour = _cleanColourText(item['colour']?.toString());
-                        final carcassQc = item['carcass_qc_day']?.toString() ?? '';
-                        final finalQc = item['final_qc_date']?.toString() ?? '';
-                        final qcNotes = item['qc_notes']?.toString() ?? '';
-                        final notes = item['notes']?.toString() ?? '';
-                        
+                        void open() => _showDetailDialog(context, item);
+
                         return DataRow(
                           cells: [
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 100),
-                                child: Text(
-                                  product,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 120),
-                                child: Text(
-                                  order,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 150),
-                                child: Text(
-                                  supplier,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 200),
-                                child: Text(
-                                  colour,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 100),
-                                child: Text(
-                                  carcassQc,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 100),
-                                child: Text(
-                                  finalQc,
-                                  softWrap: true,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 100),
-                                child: Text(
-                                  qcNotes,
-                                  softWrap: true,
-                                  maxLines: 5,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 100),
-                                child: Text(
-                                  notes,
-                                  softWrap: true,
-                                  maxLines: 5,
-                                ),
-                              ),
-                              onTap: () => _showDetailDialog(context, item),
-                            ),
+                            _processCell(text: item['product']?.toString() ?? '', width: _columns[0].width, onTap: open),
+                            _processCell(text: order, width: _columns[1].width, color: _parseExcelColor(item['order_color']), onTap: open),
+                            _processCell(text: supplier, width: _columns[2].width, onTap: open),
+                            _processCell(text: _cleanColourText(item['colour']?.toString()), width: _columns[3].width, onTap: open),
+                            _processCell(text: _formatQcDate(item['carcass_qc_day']), width: _columns[4].width, color: _parseExcelColor(item['carcass_color']), onTap: open),
+                            _processCell(text: _formatQcDate(item['final_qc_date']), width: _columns[5].width, color: _parseExcelColor(item['final_color']), onTap: open),
+                            _processCell(text: item['qc_notes']?.toString() ?? '', width: _columns[6].width, maxLines: 5, onTap: open),
+                            _processCell(text: item['notes']?.toString() ?? '', width: _columns[7].width, maxLines: 5, onTap: open),
                           ],
                         );
                       }).toList(),
@@ -1079,7 +961,7 @@ class ProcessSearchDelegate extends SearchDelegate {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: item.entries
-                .where((entry) => entry.key != 'image') // Exclude image field
+                .where((entry) => entry.key != 'image' && !entry.key.endsWith('_color')) // Exclude image and fill-color fields
                 .map((entry) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1094,7 +976,11 @@ class ProcessSearchDelegate extends SearchDelegate {
                       ),
                     ),
                     Expanded(
-                      child: Text(entry.value?.toString() ?? 'N/A'),
+                      child: Text(
+                        (entry.key == 'carcass_qc_day' || entry.key == 'final_qc_date')
+                            ? _formatQcDate(entry.value)
+                            : (entry.value?.toString() ?? 'N/A'),
+                      ),
                     ),
                   ],
                 ),
