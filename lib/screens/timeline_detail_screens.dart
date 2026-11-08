@@ -231,6 +231,15 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           // Column index -> position in stage_done (only stage columns have one)
           final stagePosition = {for (var i = 0; i < stageColumns.length; i++) stageColumns[i]: i};
 
+          // Progress is appended after the backend columns; swap it with IMAGE so it sits where IMAGE was
+          final progressColumn = headers.length;
+          final imageColumn = headers.indexWhere((header) => header.toUpperCase() == 'IMAGE');
+          final columnOrder = List<int>.generate(headers.length + 1, (i) => i);
+          if (imageColumn >= 0) {
+            columnOrder[imageColumn] = progressColumn;
+            columnOrder[progressColumn] = imageColumn;
+          }
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -259,21 +268,23 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                             dataRowMaxHeight: _rowHeight,
                             headingRowColor: WidgetStateProperty.all(kTimelineBordeaux.withValues(alpha: 0.1)),
                             columns: [
-                              for (final header in headers)
-                                DataColumn(label: _headerLabel(header, _columnWidth)),
-                              DataColumn(label: _headerLabel('Progress', 100)),
+                              for (final column in columnOrder)
+                                column == progressColumn
+                                    ? DataColumn(label: _headerLabel('Progress', 100))
+                                    : DataColumn(label: _headerLabel(headers[column], _columnWidth)),
                             ],
                             rows: products.map((product) {
                               final cells = List<String>.from(product['cells'] as List);
                               final stageDone = List<bool>.from(product['stage_done'] as List);
                               return DataRow(
                                 cells: [
-                                  for (var column = 0; column < headers.length; column++)
-                                    DataCell(_textCell(
-                                      cells[column],
-                                      done: stagePosition.containsKey(column) && stageDone[stagePosition[column]!],
-                                    )),
-                                  DataCell(_progressCell((product['pct'] as num).toDouble())),
+                                  for (final column in columnOrder)
+                                    column == progressColumn
+                                        ? DataCell(_progressCell((product['pct'] as num).toDouble()))
+                                        : DataCell(_textCell(
+                                            cells[column],
+                                            done: stagePosition.containsKey(column) && stageDone[stagePosition[column]!],
+                                          )),
                                 ],
                               );
                             }).toList(),
