@@ -254,6 +254,7 @@ class _DimsScreenState extends ConsumerState<DimsScreen> with SingleTickerProvid
               _buildDetailRow('Width', item['width']),
               _buildDetailRow('Height', item['height']),
               _buildDetailRow('Weight', item['weight']),
+              _buildDetailRow('Net Weight', item['net_weight']),
               
               if (type == 'standard')
                 _buildDetailRow('Date', item['ngay_thuc_hien']),
@@ -508,6 +509,7 @@ class DimsSearchDelegate extends SearchDelegate {
               _buildDetailRow('Width', item['width']),
               _buildDetailRow('Height', item['height']),
               _buildDetailRow('Weight', item['weight']),
+              _buildDetailRow('Net Weight', item['net_weight']),
               
               if (type == 'standard')
                 _buildDetailRow('Date', item['ngay_thuc_hien']),

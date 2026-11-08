@@ -1,6 +1,8 @@
 // ignore_for_file: avoid_print
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -612,130 +614,6 @@ class ApiService {
     }
   }
 
-  // Get all production plan projects
-  Future<List<String>> getProductionPlanProjects() async {
-    try {
-      print('Fetching production plan projects');
-      final response = await _dio.get('production-plan/projects');
-      
-      print('Production plan projects response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        if (response.data is Map && response.data['projects'] is List) {
-          return List<String>.from(response.data['projects']);
-        } else if (response.data is List) {
-          return List<String>.from(response.data);
-        }
-        throw Exception('Unexpected production plan projects response format');
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } on DioException catch (e) {
-      print('Production plan projects DioException: ${e.type}');
-      print('Production plan projects error message: ${e.message}');
-      throw Exception('Network error: ${e.message}');
-    } catch (e) {
-      print('Production plan projects general error: $e');
-      throw Exception('Error: $e');
-    }
-  }
-
-  // Get Gantt data for a specific project with view mode
-  Future<Map<String, dynamic>> getGanttData(String poNumber, {String viewMode = 'week'}) async {
-    try {
-      print('Fetching Gantt data for: $poNumber with view mode: $viewMode');
-      final response = await _dio.get('production-plan/$poNumber/gantt?view_mode=$viewMode');
-      
-      print('Gantt data response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        if (response.data is Map) {
-          return Map<String, dynamic>.from(response.data);
-        }
-        throw Exception('Unexpected Gantt data response format');
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } on DioException catch (e) {
-      print('Gantt data DioException: ${e.type}');
-      print('Gantt data error message: ${e.message}');
-      throw Exception('Network error: ${e.message}');
-    } catch (e) {
-      print('Gantt data general error: $e');
-      throw Exception('Error: $e');
-    }
-  }
-
-  // Get view modes information
-  Future<Map<String, dynamic>?> getViewModes() async {
-    try {
-      final response = await _dio.get('production-plan/view-modes');
-      
-      if (response.statusCode == 200) {
-        return Map<String, dynamic>.from(response.data);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching view modes: $e');
-      return null;
-    }
-  }
-
-  // Get project phases
-  Future<List<Map<String, dynamic>>> getProjectPhases(String poNumber) async {
-    try {
-      print('Fetching project phases for: $poNumber');
-      final response = await _dio.get('production-plan/$poNumber');
-      
-      print('Project phases response status: ${response.statusCode}');
-      print('Project phases response data: ${response.data}');
-      
-      if (response.statusCode == 200) {
-        print('Raw response data: ${response.data}');
-        if (response.data is Map && response.data['phases'] is List) {
-          final phases = List<Map<String, dynamic>>.from(response.data['phases']);
-          print('Successfully parsed ${phases.length} phases from phases key');
-          for (int i = 0; i < phases.length && i < 3; i++) {
-            print('Phase $i sample: ${phases[i]}');
-          }
-          return phases;
-        } else if (response.data is List) {
-          final phases = List<Map<String, dynamic>>.from(response.data);
-          print('Successfully parsed ${phases.length} phases from direct list');
-          for (int i = 0; i < phases.length && i < 3; i++) {
-            print('Phase $i sample: ${phases[i]}');
-          }
-          return phases;
-        } else if (response.data is Map) {
-          print('Response is a map, looking for phases data...');
-          // Try to find phases in any nested structure
-          final data = response.data as Map<String, dynamic>;
-          for (var key in data.keys) {
-            if (data[key] is List) {
-              final phases = List<Map<String, dynamic>>.from(data[key]);
-              print('Found ${phases.length} phases under key: $key');
-              return phases;
-            }
-          }
-          // If no list found, return empty list
-          print('No phases list found in response');
-          return [];
-        }
-        throw Exception('Unexpected project phases response format: ${response.data.runtimeType}');
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } on DioException catch (e) {
-      print('Project phases DioException: ${e.type}');
-      print('Project phases error message: ${e.message}');
-      print('Project phases response: ${e.response?.data}');
-      throw Exception('Network error: ${e.message}');
-    } catch (e) {
-      print('Project phases general error: $e');
-      throw Exception('Error: $e');
-    }
-  }
-
   // ======== DRAWINGS UPLOAD & UPDATE METHODS ========
   
   // Upload multiple drawings (Web Compatible)
@@ -873,6 +751,181 @@ class ApiService {
     } catch (e) {
       print('Update drawing general error: $e');
       throw Exception('Update error: $e');
+    }
+  }
+
+  // Delete a specific drawing (from both GCS and index)
+  Future<Map<String, dynamic>> deleteDrawing(int drawingId) async {
+    try {
+      print('Deleting drawing with ID: $drawingId');
+      final response = await _dio.delete('drawings/$drawingId');
+      
+      if (response.statusCode == 200) {
+        print('Drawing deleted successfully');
+        return {
+          'success': true,
+          'message': 'Drawing deleted successfully',
+          'data': response.data,
+        };
+      } else {
+        throw Exception('Delete failed with status: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      print('Delete drawing DioException: ${e.type}');
+      print('Delete drawing error: ${e.message}');
+      print('Delete drawing response: ${e.response?.data}');
+      throw Exception('Delete error: ${e.message}');
+    } catch (e) {
+      print('Delete drawing general error: $e');
+      throw Exception('Delete error: $e');
+    }
+  }
+
+  // ======== LOGO / LAMP COLOR METHODS ========
+
+  // Search logo color by item main color
+  Future<List<dynamic>> searchLogoColor(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+    try {
+      final response = await _dio.get(
+        'colors/logo/search',
+        queryParameters: {'query': trimmed},
+      );
+      if (response.statusCode == 200 && response.data is List) {
+        return List<dynamic>.from(response.data);
+      }
+      throw Exception('Unexpected search response format: ${response.data.runtimeType}');
+    } on DioException catch (e) {
+      print('Logo search DioException: ${e.type} ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Get all logo color mappings
+  Future<List<dynamic>> fetchLogoColors() async {
+    try {
+      final response = await _dio.get('colors/logo_color');
+      if (response.statusCode == 200 && response.data is List) {
+        return List<dynamic>.from(response.data);
+      }
+      throw Exception('Unexpected response format: ${response.data.runtimeType}');
+    } on DioException catch (e) {
+      print('Logo colors DioException: ${e.type} ${e.message}');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      throw Exception('Error: $e');
+    }
+  }
+
+  // Upload TLC LOGO COLOR LIST Excel file
+  Future<Map<String, dynamic>> uploadLogoColorExcel(PlatformFile file) async {
+    try {
+      MultipartFile multipartFile;
+      if (kIsWeb) {
+        if (file.bytes == null) {
+          return {'success': false, 'error': 'File bytes not available'};
+        }
+        multipartFile = MultipartFile.fromBytes(file.bytes!, filename: file.name);
+      } else {
+        if (file.path == null) {
+          return {'success': false, 'error': 'File path not available'};
+        }
+        multipartFile = await MultipartFile.fromFile(file.path!, filename: file.name);
+      }
+
+      FormData formData = FormData.fromMap({'file': multipartFile});
+
+      final response = await _dio.post(
+        'upload-logo-colors-excel',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(minutes: 5),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data);
+      }
+      return {
+        'success': false,
+        'error': 'Server returned status ${response.statusCode}',
+      };
+    } on DioException catch (e) {
+      print('Logo upload DioException: ${e.type} ${e.message}');
+      return {'success': false, 'error': e.message ?? 'Network error occurred'};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // ======== QC STANDARDS METHODS ========
+
+  String _qcErrorMessage(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['detail'] != null) return data['detail'].toString();
+    return 'Network error: ${e.message}';
+  }
+
+  Future<List<Map<String, dynamic>>> qcSuggest(String query) async {
+    try {
+      final response = await _dio.get('qc/suggest', queryParameters: {'q': query});
+      return List<Map<String, dynamic>>.from(response.data);
+    } on DioException catch (e) {
+      throw Exception(_qcErrorMessage(e));
+    }
+  }
+
+  Future<Map<String, dynamic>> qcStandards(String name, String type) async {
+    try {
+      final response = await _dio.get(
+        'qc/standards',
+        queryParameters: {'name': name, 'type': type},
+      );
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      throw Exception(_qcErrorMessage(e));
+    }
+  }
+
+  Future<String?> qcImageUrl(String ref) async {
+    try {
+      final response = await _dio.get(
+        'qc/image',
+        queryParameters: {'ref': ref},
+        options: Options(validateStatus: (status) => status != null && status < 500),
+      );
+      if (response.statusCode == 200) return response.data['url'] as String?;
+      return null;
+    } on DioException catch (e) {
+      throw Exception(_qcErrorMessage(e));
+    }
+  }
+
+  Future<Map<String, dynamic>> uploadQcFile(String endpoint, PlatformFile file) async {
+    try {
+      final MultipartFile multipartFile;
+      if (file.bytes != null) {
+        multipartFile = MultipartFile.fromBytes(file.bytes!, filename: file.name);
+      } else if (file.path != null) {
+        multipartFile = await MultipartFile.fromFile(file.path!, filename: file.name);
+      } else {
+        throw Exception('File ${file.name} has no bytes or path available');
+      }
+      final response = await _dio.post(
+        endpoint,
+        data: FormData.fromMap({'file': multipartFile}),
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(minutes: 10),
+        ),
+      );
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      throw Exception(_qcErrorMessage(e));
     }
   }
 }

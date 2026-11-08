@@ -17,6 +17,7 @@ dependencies:
   url_launcher: ^6.3.2
   file_picker: ^8.1.6
   shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
@@ -31,6 +32,7 @@ flutter:
 
   assets:
     - assets/tlc_logo.png
+    - assets/documents/
 
 # Di chuyển ra root level (cùng cấp dependencies)
 flutter_native_splash:

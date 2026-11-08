@@ -15,6 +15,7 @@ class ColorsScreen extends ConsumerStatefulWidget {
 class _ColorsScreenState extends ConsumerState<ColorsScreen> {
   final ApiService _apiService = ApiService();
   bool _sortAscending = true; // Track sort order
+  int _sortColumnIndex = 0; // Track which column is being sorted (0 = No., 5 = PO)
   int _refreshKey = 0; // Key to force rebuild of tabs
   String? _lastUpdateDate; // Track last update date
 
@@ -308,9 +309,73 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
           indexedData.add(MapEntry(i + 1, filteredData[i]));
         }
         
-        // Sort based on current sort order
-        if (!_sortAscending) {
-          indexedData = indexedData.reversed.toList();
+        // Sort based on current sort column and order
+        if (_sortColumnIndex == 0) {
+          // Sort by No. (original order)
+          if (!_sortAscending) {
+            indexedData = indexedData.reversed.toList();
+          }
+        } else if (_sortColumnIndex == 5) {
+          // Sort by PO column by year first, then by number
+          indexedData.sort((a, b) {
+            // Extract PO values
+            final aItem = a.value;
+            final bItem = b.value;
+            
+            bool aIsCustomOrSupplier = aItem['ref_color'] != null || 
+                                      aItem['code_items'] != null || 
+                                      aItem['date_signed_off'] != null ||
+                                      aItem['pro'] != null ||
+                                      aItem['po'] != null;
+            
+            bool bIsCustomOrSupplier = bItem['ref_color'] != null || 
+                                      bItem['code_items'] != null || 
+                                      bItem['date_signed_off'] != null ||
+                                      bItem['pro'] != null ||
+                                      bItem['po'] != null;
+            
+            String aPoValue = aIsCustomOrSupplier ? (aItem['po']?.toString() ?? '') : '';
+            String bPoValue = bIsCustomOrSupplier ? (bItem['po']?.toString() ?? '') : '';
+            
+            // Handle empty PO values - always put them at the bottom
+            bool aIsEmpty = aPoValue.isEmpty;
+            bool bIsEmpty = bPoValue.isEmpty;
+            
+            if (aIsEmpty && bIsEmpty) {
+              return 0; // Both empty, keep original order
+            } else if (aIsEmpty) {
+              return 1; // A is empty, put it after B
+            } else if (bIsEmpty) {
+              return -1; // B is empty, put it after A
+            }
+            
+            // Parse PO pattern "POx-yy"
+            final poPattern = RegExp(r'^PO(\d+)-(\d+)$', caseSensitive: false);
+            final aMatch = poPattern.firstMatch(aPoValue);
+            final bMatch = poPattern.firstMatch(bPoValue);
+            
+            int result = 0;
+            
+            if (aMatch != null && bMatch != null) {
+              // Both match the POx-yy pattern
+              int aNumber = int.parse(aMatch.group(1)!);
+              int aYear = int.parse(aMatch.group(2)!);
+              int bNumber = int.parse(bMatch.group(1)!);
+              int bYear = int.parse(bMatch.group(2)!);
+              
+              // Sort by year first (descending), then by number (ascending)
+              if (aYear != bYear) {
+                result = bYear.compareTo(aYear); // Descending year order
+              } else {
+                result = aNumber.compareTo(bNumber); // Ascending number order
+              }
+            } else {
+              // Fallback to alphabetical comparison
+              result = aPoValue.toLowerCase().compareTo(bPoValue.toLowerCase());
+            }
+            
+            return _sortAscending ? result : -result;
+          });
         }
         
         return SingleChildScrollView(
@@ -318,7 +383,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              sortColumnIndex: 0,
+              sortColumnIndex: _sortColumnIndex,
               sortAscending: _sortAscending,
               dataRowMinHeight: 100,
               dataRowMaxHeight: 120,
@@ -331,7 +396,8 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                   ),
                   onSort: (columnIndex, ascending) {
                     setState(() {
-                      _sortAscending = !_sortAscending;
+                      _sortColumnIndex = 0; // No. column index
+                      _sortAscending = ascending;
                     });
                   },
                 ),
@@ -352,6 +418,18 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                     'Supplier',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
+                ),
+                DataColumn(
+                  label: const Text(
+                    'PO',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  onSort: (columnIndex, ascending) {
+                    setState(() {
+                      _sortColumnIndex = 5; // PO column index
+                      _sortAscending = ascending;
+                    });
+                  },
                 ),
                 const DataColumn(
                   label: Text(
@@ -400,6 +478,10 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                 String supplierValue = isSupplierTable ? _getSupplierName(tableName) : 
                                       isCustomColor ? (item['supplier'] ?? '') : 
                                       _convertSupInchart(item['sup_inchart']);
+                
+                // Extract PO value for tables that have it
+                String poValue = (isCustomColor || isSupplierTable) ? (item['po']?.toString() ?? '') : '';
+                
                 String notes = item['notes']?.toString() ?? '';
                 
                 return DataRow(
@@ -417,6 +499,16 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                     ),
                     DataCell(Text(statusValue), onTap: () => _showDetailDialog(context, item)),
                     DataCell(Text(supplierValue), onTap: () => _showDetailDialog(context, item)),
+                    DataCell(
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: Text(
+                          poValue,
+                          softWrap: true,
+                        ),
+                      ),
+                      onTap: () => _showDetailDialog(context, item),
+                    ),
                     DataCell(
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 300),
@@ -482,6 +574,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                 _buildDetailRow('Status', item['status']),
                 _buildDetailRow('Pro', item['pro']),
                 _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Product Name', item['product_name']),
                 _buildDetailRow('Notes', item['notes']),
               ] else if (isCustomColor) ...[
                 _buildDetailRow('Name', item['name']),
@@ -491,6 +584,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                 _buildDetailRow('Status', item['status']),
                 _buildDetailRow('PRO', item['pro']),
                 _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Product Name', item['product_name']),
                 _buildDetailRow('Supplier', item['supplier']),
                 _buildDetailRow('Notes', item['notes']),
               ] else ...[
@@ -703,21 +797,28 @@ class ColorSearchDelegate extends SearchDelegate {
                       rows: results.asMap().entries.map((entry) {
                         final index = entry.key + 1;
                         final item = entry.value;
-                        
-                        // Handle different field names for Effect Statistics table
-                        String displayName = item['name'] ?? 
-                                            item['color_name'] ?? 
-                                            item['swatch_name'] ?? 
-                                            'N/A';
-                        
-                        // Determine if this is custom_color
+
+                        // Determine which database this item is from
                         String? database = item['database'] ?? item['table_name'];
+                        bool isLogoColor = database == 'logo_color';
                         bool isCustomColor = database?.toLowerCase().contains('custom') ?? false;
-                        
-                        String statusValue = isCustomColor ? (item['pro'] ?? '') : (item['status'] ?? '');
-                        String supplierValue = isCustomColor ? (item['supplier'] ?? '') : _convertSupInchart(item['sup_inchart']);
-                        String notes = item['notes']?.toString() ?? '';
-                        
+
+                        // Logo records have main_color -> logo_color shape
+                        String displayName = isLogoColor
+                            ? (item['main_color'] ?? item['name'] ?? 'N/A').toString()
+                            : (item['name'] ??
+                                item['color_name'] ??
+                                item['swatch_name'] ??
+                                'N/A').toString();
+
+                        String statusValue = isLogoColor
+                            ? (item['logo_color'] ?? '').toString()
+                            : (isCustomColor ? (item['pro'] ?? '') : (item['status'] ?? '')).toString();
+                        String supplierValue = isLogoColor
+                            ? 'LOGO / LAMP'
+                            : (isCustomColor ? (item['supplier'] ?? '') : _convertSupInchart(item['sup_inchart'])).toString();
+                        String notes = isLogoColor ? '' : (item['notes']?.toString() ?? '');
+
                         // Determine the table name for edit navigation
                         String tableName = database ?? 'lacquer_fin';
                         
@@ -749,9 +850,14 @@ class ColorSearchDelegate extends SearchDelegate {
                             ),
                             DataCell(
                               IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.blue),
-                                onPressed: () => _navigateToEditScreen(context, item, tableName),
-                                tooltip: 'Edit',
+                                icon: Icon(
+                                  isLogoColor ? Icons.branding_watermark : Icons.edit,
+                                  color: isLogoColor ? Colors.grey : Colors.blue,
+                                ),
+                                onPressed: isLogoColor
+                                    ? null
+                                    : () => _navigateToEditScreen(context, item, tableName),
+                                tooltip: isLogoColor ? 'Logo mapping (read-only)' : 'Edit',
                               ),
                             ),
                           ],
@@ -778,8 +884,38 @@ class ColorSearchDelegate extends SearchDelegate {
   void _showDetailDialog(BuildContext context, Map<String, dynamic> item) {
     // Determine which database/table this item is from
     String? database = item['database'] ?? item['table_name'];
+    bool isLogoColor = database == 'logo_color';
     bool isCustomColor = database?.toLowerCase().contains('custom') ?? false;
-    
+
+    // Logo records: main_color -> logo_color shape (no status/supplier/product_name)
+    if (isLogoColor) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text((item['main_color'] ?? item['name'] ?? 'Details').toString()),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDetailRow('STT', item['stt']),
+                _buildDetailRow('Main Color (TLC COLOR)', item['main_color'] ?? item['name']),
+                _buildDetailRow('Logo Color (LOGO COLOR)', item['logo_color']),
+                _buildDetailRow('Database', database),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     // Check if this is a supplier table entry (has order_no field)
     bool isSupplierTable = item['order_no'] != null;
     
@@ -803,6 +939,7 @@ class ColorSearchDelegate extends SearchDelegate {
                 _buildDetailRow('Status', item['status']),
                 _buildDetailRow('Pro', item['pro']),
                 _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Product Name', item['product_name']),
                 _buildDetailRow('Notes', item['notes']),
               ] else if (isCustomColor) ...[
                 _buildDetailRow('Name', item['name']),
@@ -812,6 +949,7 @@ class ColorSearchDelegate extends SearchDelegate {
                 _buildDetailRow('Status', item['status']),
                 _buildDetailRow('PRO', item['pro']),
                 _buildDetailRow('PO', item['po']),
+                _buildDetailRow('Product Name', item['product_name']),
                 _buildDetailRow('Supplier', item['supplier']),
                 _buildDetailRow('Notes', item['notes']),
               ] else ...[

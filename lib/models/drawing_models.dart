@@ -167,3 +167,35 @@ class UpdateResult {
     };
   }
 }
+
+class DeleteResult {
+  final bool success;
+  final String message;
+  final int? id;
+  final String? filename;
+  
+  DeleteResult({
+    required this.success,
+    required this.message,
+    this.id,
+    this.filename,
+  });
+  
+  factory DeleteResult.fromJson(Map<String, dynamic> json) {
+    return DeleteResult(
+      success: json['success'] ?? false,
+      message: json['message'] ?? '',
+      id: json['id'],
+      filename: json['filename'],
+    );
+  }
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'success': success,
+      'message': message,
+      'id': id,
+      'filename': filename,
+    };
+  }
+}

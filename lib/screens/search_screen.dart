@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/search_provider.dart';
 import 'pdf_viewer_screen.dart';
+import 'upload_drawings_screen.dart';
+import 'update_drawing_screen.dart';
+import 'delete_drawing_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -26,6 +29,70 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref.read(searchProvider.notifier).performSearch(query);
   }
 
+  void _handleMenuSelection(String choice) async {
+    switch (choice) {
+      case 'upload':
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UploadDrawingsScreen(),
+          ),
+        );
+        // If drawings were uploaded successfully, refresh the current search to show new results
+        if (result == true && _searchController.text.isNotEmpty) {
+          _performSearch();
+        }
+        break;
+      case 'update':
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UpdateDrawingScreen(),
+          ),
+        );
+        // If a drawing was updated successfully, refresh the current search
+        if (result == true && _searchController.text.isNotEmpty) {
+          _performSearch();
+        }
+        break;      case 'delete':
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const DeleteDrawingScreen(),
+          ),
+        );
+        // If a drawing was deleted successfully, refresh the current search
+        if (result == true && _searchController.text.isNotEmpty) {
+          _performSearch();
+        }
+        break;      case 'delete':
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const DeleteDrawingScreen(),
+          ),
+        );
+        // If a drawing was deleted successfully, refresh the current search
+        if (result == true && _searchController.text.isNotEmpty) {
+          _performSearch();
+        }
+        break;
+      case 'refresh':
+        // Refresh the current search if there is one
+        if (_searchController.text.isNotEmpty) {
+          _performSearch();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Enter a search term and perform a search first'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
@@ -38,6 +105,56 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           'TLC DRAWINGS SEARCH APP',
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            tooltip: 'Menu',
+            onSelected: _handleMenuSelection,
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'upload',
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Upload Drawings'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'update',
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Update Drawings'),
+                  ],
+                ),
+              ),              const PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text('Delete Drawings', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Refresh'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

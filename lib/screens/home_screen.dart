@@ -3,6 +3,37 @@ import 'package:flutter/material.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  void _showQcOptions(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('QC STANDARDS'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pushNamed(context, '/about-lacquer');
+            },
+            child: const ListTile(
+              leading: Icon(Icons.info_outline, color: Color(0xFFC00000)),
+              title: Text('ABOUT LACQUER'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pushNamed(context, '/qc');
+            },
+            child: const ListTile(
+              leading: Icon(Icons.fact_check, color: Color(0xFFC00000)),
+              title: Text('QC CHECKSHEET'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -11,7 +42,8 @@ class HomeScreen extends StatelessWidget {
           'TLC DRAWINGS SEARCH APP',
           style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: const Color(0xFFC00000),  // Bordeaux theme 
+        backgroundColor: const Color(0xFFC00000),  // Bordeaux theme
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Center(
         child: Column(
@@ -69,6 +101,19 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () {
+                Navigator.pushNamed(context, '/logo');  // Navigate to LOGO / LAMP search
+              },
+              icon: const Icon(Icons.branding_watermark),
+              label: const Text('LOGO / LAMP'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC00000),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(200, 50),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () {
                 Navigator.pushNamed(context, '/projects');  // Navigate to Timeline
               },
               icon: const Icon(Icons.account_tree),
@@ -81,11 +126,9 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pushNamed(context, '/production-plan');  // Navigate to Production Plan
-              },
-              icon: const Icon(Icons.timeline),
-              label: const Text('PRODUCTION PLAN'),
+              onPressed: () => _showQcOptions(context),
+              icon: const Icon(Icons.fact_check),
+              label: const Text('QC STANDARDS'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFC00000),
                 foregroundColor: Colors.white,

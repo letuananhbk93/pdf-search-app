@@ -9,23 +9,9 @@ class AllColorsHistoryScreen extends StatefulWidget {
 }
 
 class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
-  final ApiService _apiService = ApiService();
-  final TextEditingController _userSearchController = TextEditingController();
-  
-  List<Map<String, dynamic>> _historyData = [];
-  bool _isLoading = true;
-  
-  // Filter variables
-  String _selectedTable = '';
-  String _selectedAction = '';
-  String _searchUser = '';
-  
-  // Pagination
-  int _currentOffset = 0;
-  bool _hasMore = true;
-  bool _isLoadingMore = false;
+  static const _pageSize = 50;
 
-  final List<Map<String, String>> _tables = [
+  static const List<Map<String, String>> _tables = [
     {'value': '', 'label': 'All Tables'},
     {'value': 'lacquer_fin', 'label': 'Lacquer FIN'},
     {'value': 'custom_color', 'label': 'Custom Color'},
@@ -38,27 +24,57 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
     {'value': 'mai_home', 'label': 'Mai Home'},
   ];
 
-  final List<Map<String, String>> _actions = [
+  static const List<Map<String, String>> _actions = [
     {'value': '', 'label': 'All Actions'},
     {'value': 'INSERT', 'label': 'INSERT'},
     {'value': 'UPDATE', 'label': 'UPDATE'},
     {'value': 'DELETE', 'label': 'DELETE'},
   ];
 
+  final ApiService _apiService = ApiService();
+  final TextEditingController _userSearchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  List<Map<String, dynamic>> _historyData = [];
+  bool _isLoading = true;
+
+  // Filter variables
+  String _selectedTable = '';
+  String _selectedAction = '';
+  String _searchUser = '';
+
+  // Pagination
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+
+  // Identifies the latest request so stale responses are ignored
+  int _requestId = 0;
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadHistory();
   }
 
-  void _loadHistory({bool loadMore = false}) async {
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    // Load the next page shortly before the user reaches the bottom
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _loadHistory(loadMore: true);
+    }
+  }
+
+  Future<void> _loadHistory({bool loadMore = false}) async {
     if (loadMore && (_isLoadingMore || !_hasMore)) return;
-    
+
+    final requestId = ++_requestId;
+
     if (!loadMore) {
       setState(() {
         _isLoading = true;
-        _currentOffset = 0;
-        _historyData.clear();
+        _isLoadingMore = false;
       });
     } else {
       setState(() => _isLoadingMore = true);
@@ -66,26 +82,29 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
 
     try {
       final response = await _apiService.getAllColorsHistory(
-        limit: 50,
-        offset: _currentOffset,
+        limit: _pageSize,
+        offset: loadMore ? _historyData.length : 0,
         tableFilter: _selectedTable.isNotEmpty ? _selectedTable : null,
         actionFilter: _selectedAction.isNotEmpty ? _selectedAction : null,
         changedByFilter: _searchUser.isNotEmpty ? _searchUser : null,
       );
 
+      // Drop responses from superseded requests or after the screen is closed
+      if (!mounted || requestId != _requestId) return;
+
+      final history = List<Map<String, dynamic>>.from(response['history'] ?? []);
       setState(() {
         if (loadMore) {
-          _historyData.addAll(List<Map<String, dynamic>>.from(response['history'] ?? []));
+          _historyData.addAll(history);
           _isLoadingMore = false;
         } else {
-          _historyData = List<Map<String, dynamic>>.from(response['history'] ?? []);
+          _historyData = history;
           _isLoading = false;
         }
         _hasMore = response['has_more'] ?? false;
-        _currentOffset += 50;
       });
-
     } catch (e) {
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         if (loadMore) {
           _isLoadingMore = false;
@@ -93,12 +112,15 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
           _isLoading = false;
         }
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading history: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading history: $e')),
+      );
     }
+  }
+
+  void _applyUserSearch(String value) {
+    _searchUser = value.trim();
+    _loadHistory();
   }
 
   @override
@@ -127,7 +149,7 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
               children: [
                 // Table Filter Dropdown
                 DropdownButtonFormField<String>(
-                  value: _selectedTable.isEmpty ? '' : _selectedTable,
+                  value: _selectedTable,
                   decoration: const InputDecoration(
                     labelText: 'Filter by Table',
                     border: OutlineInputBorder(),
@@ -143,14 +165,14 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Action Filter and User Search Row
                 Row(
                   children: [
                     // Action Filter Dropdown
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _selectedAction.isEmpty ? '' : _selectedAction,
+                        value: _selectedAction,
                         decoration: const InputDecoration(
                           labelText: 'Action',
                           border: OutlineInputBorder(),
@@ -167,7 +189,7 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    
+
                     // User Search Field
                     Expanded(
                       child: TextField(
@@ -178,16 +200,10 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           suffixIcon: IconButton(
                             icon: const Icon(Icons.search),
-                            onPressed: () {
-                              _searchUser = _userSearchController.text.trim();
-                              _loadHistory();
-                            },
+                            onPressed: () => _applyUserSearch(_userSearchController.text),
                           ),
                         ),
-                        onSubmitted: (value) {
-                          _searchUser = value.trim();
-                          _loadHistory();
-                        },
+                        onSubmitted: _applyUserSearch,
                       ),
                     ),
                   ],
@@ -195,9 +211,11 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
               ],
             ),
           ),
-          
-          // Results count
-          if (!_isLoading)
+
+          // Loading bar or results count
+          if (_isLoading)
+            const LinearProgressIndicator(minHeight: 2)
+          else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
@@ -209,53 +227,63 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
                 ],
               ),
             ),
-          
+
           // History list
           Expanded(
-            child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _historyData.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No history found',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _historyData.length + (_hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _historyData.length) {
-                        // Load more button
-                        return Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: _isLoadingMore
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton(
-                                onPressed: () => _loadHistory(loadMore: true),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFC00000),
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Load More'),
-                              ),
-                        );
-                      }
-                      
-                      final historyItem = _historyData[index];
-                      return _buildHistoryCard(historyItem);
-                    },
-                  ),
+            child: _buildHistoryList(),
           ),
         ],
       ),
     );
   }
 
+  Widget _buildHistoryList() {
+    if (_isLoading && _historyData.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_historyData.isEmpty) {
+      return const Center(
+        child: Text(
+          'No history found',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _loadHistory(),
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: _historyData.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == _historyData.length) {
+            // Load more button
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: _isLoadingMore
+                ? const Center(child: CircularProgressIndicator())
+                : ElevatedButton(
+                    onPressed: () => _loadHistory(loadMore: true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC00000),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Load More'),
+                  ),
+            );
+          }
+
+          final historyItem = _historyData[index];
+          return _buildHistoryCard(historyItem);
+        },
+      ),
+    );
+  }
+
   Widget _buildHistoryCard(Map<String, dynamic> historyItem) {
-    DateTime? changedAt = historyItem['changed_at'] != null 
-      ? DateTime.parse(historyItem['changed_at'])
-      : null;
-    
+    final changedAt = _formatChangedAt(historyItem['changed_at']);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
@@ -265,7 +293,7 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
           children: [
             Text('Action: ${historyItem['action']} by ${historyItem['changed_by'] ?? 'Unknown'}'),
             if (changedAt != null)
-              Text('${changedAt.day}/${changedAt.month}/${changedAt.year} ${changedAt.hour}:${changedAt.minute.toString().padLeft(2, '0')}'),
+              Text(changedAt),
             if (historyItem['action'] == 'UPDATE' && historyItem['changes_count'] != null)
               Text(
                 '${historyItem['changes_count']} field(s) changed',
@@ -299,6 +327,9 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
   }
 
   void _showHistoryDetails(Map<String, dynamic> item) {
+    final oldData = item['old_data'];
+    final newData = item['new_data'];
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -311,24 +342,24 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
               _buildDetailRow('Color Name', item['color_name'] ?? item['record_name']),
               _buildDetailRow('Action', item['action']),
               _buildDetailRow('Changed By', item['changed_by']),
-              _buildDetailRow('Changed At', item['changed_at']),
-              
-              if (item['old_data'] != null && item['new_data'] != null) ...[
+              _buildDetailRow('Changed At', _formatChangedAt(item['changed_at'])),
+
+              if (oldData is Map<String, dynamic> && newData is Map<String, dynamic>) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'Changes:',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
-                _buildChangesComparison(item['old_data'], item['new_data']),
-              ] else if (item['new_data'] != null) ...[
+                _buildChangesComparison(oldData, newData),
+              ] else if (newData is Map<String, dynamic>) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'New Data:',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
-                _buildNewDataDisplay(item['new_data']),
+                _buildNewDataDisplay(newData),
               ],
             ],
           ),
@@ -341,6 +372,18 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
         ],
       ),
     );
+  }
+
+  String? _formatChangedAt(dynamic value) {
+    if (value == null) return null;
+    final parsed = value is String ? DateTime.tryParse(value) : null;
+    // Unparseable values are shown as-is
+    if (parsed == null) return value.toString();
+
+    final local = parsed.toLocal();
+    final date = '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
+    final time = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return '$date $time';
   }
 
   Widget _buildDetailRow(String label, dynamic value) {
@@ -365,11 +408,13 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
 
   Widget _buildChangesComparison(Map<String, dynamic> oldData, Map<String, dynamic> newData) {
     List<Widget> changes = [];
-    
-    newData.forEach((key, newValue) {
+
+    final keys = {...oldData.keys, ...newData.keys};
+
+    for (final key in keys) {
       String oldValue = oldData[key]?.toString() ?? 'null';
-      String newValueStr = newValue?.toString() ?? 'null';
-      
+      String newValueStr = newData[key]?.toString() ?? 'null';
+
       if (oldValue != newValueStr) {
         changes.add(
           Padding(
@@ -425,8 +470,15 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
           ),
         );
       }
-    });
-    
+    }
+
+    if (changes.isEmpty) {
+      return const Text(
+        'No field changes',
+        style: TextStyle(fontSize: 12, color: Colors.grey),
+      );
+    }
+
     return Column(children: changes);
   }
 
@@ -448,6 +500,8 @@ class _AllColorsHistoryScreenState extends State<AllColorsHistoryScreen> {
   @override
   void dispose() {
     _userSearchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 }

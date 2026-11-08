@@ -5,8 +5,11 @@ import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/colors_screen.dart';
 import 'screens/dims_screen.dart';
+import 'screens/logo_search_screen.dart';
 import 'screens/timeline_screen.dart';
-import 'screens/production_plan_screen.dart';
+import 'screens/qc_standards_screen.dart';
+import 'screens/about_lacquer_screen.dart';
+import 'screens/other_lacquer_documents.dart';
 
 
 void main() {
@@ -28,8 +31,11 @@ class MyApp extends StatelessWidget {
         '/search': (context) => const SearchScreen(),
         '/colors': (context) => const ColorsScreen(),
         '/dims': (context) => const DimsScreen(),
+        '/logo': (context) => const LogoSearchScreen(),
         '/projects': (context) => const TimelineScreen(),
-        '/production-plan': (context) => const ProductionPlanScreen(),
+        '/qc': (context) => const QcStandardsScreen(),
+        '/about-lacquer': (context) => const AboutLacquerScreen(),
+        '/other-documents': (context) => const OtherLacquerDocumentsScreen(),
       },
     );
   }
