@@ -100,7 +100,7 @@ class _TimelinePoScreenState extends State<TimelinePoScreen> {
               return TimelineProgressCard(
                 title: poLabel,
                 pct: (po['pct'] as num).toDouble(),
-                subtitle: '${po['product_count']} products',
+                subtitle: 'Qty ${(po['qty'] as num).round()}',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -200,6 +200,15 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 
   final TimelineService _service = TimelineService();
   late Future<Map<String, dynamic>> _future = _service.fetchSupplier(widget.supplierId);
+  final ScrollController _horizontalScroll = ScrollController();
+  final ScrollController _verticalScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalScroll.dispose();
+    _verticalScroll.dispose();
+    super.dispose();
+  }
 
   void _retry() => setState(() => _future = _service.fetchSupplier(widget.supplierId));
 
@@ -230,34 +239,47 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                 child: Text('Yellow cells: stage completed', style: TextStyle(fontSize: 12, color: Colors.black54)),
               ),
               Expanded(
-                child: SingleChildScrollView(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columnSpacing: 0,
-                      horizontalMargin: 0,
-                      dataRowMinHeight: _rowHeight,
-                      dataRowMaxHeight: _rowHeight,
-                      headingRowColor: WidgetStateProperty.all(kTimelineBordeaux.withValues(alpha: 0.1)),
-                      columns: [
-                        for (final header in headers)
-                          DataColumn(label: _headerLabel(header, _columnWidth)),
-                        DataColumn(label: _headerLabel('Progress', 100)),
-                      ],
-                      rows: products.map((product) {
-                        final cells = List<String>.from(product['cells'] as List);
-                        final stageDone = List<bool>.from(product['stage_done'] as List);
-                        return DataRow(
-                          cells: [
-                            for (var column = 0; column < headers.length; column++)
-                              DataCell(_textCell(
-                                cells[column],
-                                done: stagePosition.containsKey(column) && stageDone[stagePosition[column]!],
-                              )),
-                            DataCell(_progressCell((product['pct'] as num).toDouble())),
-                          ],
-                        );
-                      }).toList(),
+                child: ScrollConfiguration(
+                  behavior: const TimelineScrollBehavior(),
+                  child: Scrollbar(
+                    controller: _verticalScroll,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _verticalScroll,
+                      child: Scrollbar(
+                        controller: _horizontalScroll,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _horizontalScroll,
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columnSpacing: 0,
+                            horizontalMargin: 0,
+                            dataRowMinHeight: _rowHeight,
+                            dataRowMaxHeight: _rowHeight,
+                            headingRowColor: WidgetStateProperty.all(kTimelineBordeaux.withValues(alpha: 0.1)),
+                            columns: [
+                              for (final header in headers)
+                                DataColumn(label: _headerLabel(header, _columnWidth)),
+                              DataColumn(label: _headerLabel('Progress', 100)),
+                            ],
+                            rows: products.map((product) {
+                              final cells = List<String>.from(product['cells'] as List);
+                              final stageDone = List<bool>.from(product['stage_done'] as List);
+                              return DataRow(
+                                cells: [
+                                  for (var column = 0; column < headers.length; column++)
+                                    DataCell(_textCell(
+                                      cells[column],
+                                      done: stagePosition.containsKey(column) && stageDone[stagePosition[column]!],
+                                    )),
+                                  DataCell(_progressCell((product['pct'] as num).toDouble())),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

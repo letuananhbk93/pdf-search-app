@@ -1,6 +1,21 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 const Color kTimelineBordeaux = Color(0xFFC00000);
+
+/// Lets mouse, trackpad and stylus drag-scroll the tables. Flutter web only drag-scrolls touch by default,
+/// so on a PC the table could only be moved with the wheel or the scrollbar.
+class TimelineScrollBehavior extends MaterialScrollBehavior {
+  const TimelineScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
+}
 
 AppBar buildTimelineAppBar({List<Widget> actions = const []}) {
   return AppBar(
