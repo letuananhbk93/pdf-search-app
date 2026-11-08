@@ -227,7 +227,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text('Green cells: stage completed', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                child: Text('Yellow cells: stage completed', style: TextStyle(fontSize: 12, color: Colors.black54)),
               ),
               Expanded(
                 child: SingleChildScrollView(
@@ -285,7 +285,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
       height: _rowHeight,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: done ? Colors.green.withValues(alpha: 0.25) : null,
+      color: done ? const Color(0xFFFFFF00) : null,
       child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis),
     );
   }
