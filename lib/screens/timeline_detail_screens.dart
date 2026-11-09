@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../services/timeline_service.dart';
 import '../widgets/timeline_widgets.dart';
@@ -100,7 +103,7 @@ class _TimelinePoScreenState extends State<TimelinePoScreen> {
               return TimelineProgressCard(
                 title: poLabel,
                 pct: (po['pct'] as num).toDouble(),
-                subtitle: 'Qty ${(po['qty'] as num).round()}',
+                subtitle: 'Finished: ${po['finished_count']}/${po['product_count']} products',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -183,7 +186,8 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
   }
 }
 
-/// Screen 4: the supplier's timeline table with a Progress column; completed stage cells are tinted green.
+/// Screen 4: the supplier's timeline table; completed stage cells are tinted yellow.
+/// Tap a header to sort by it, double tap to hide it, right-click or hold a header for 2 seconds to unhide.
 class TimelineTableScreen extends StatefulWidget {
   const TimelineTableScreen({super.key, required this.supplierId, required this.path});
 
@@ -196,15 +200,29 @@ class TimelineTableScreen extends StatefulWidget {
 
 class _TimelineTableScreenState extends State<TimelineTableScreen> {
   static const double _columnWidth = 140;
+  static const double _narrowColumnWidth = _columnWidth / 3;
+  static const double _progressWidth = 100;
   static const double _rowHeight = 44;
+  static const double _headerHeight = 56;
+  static const Duration _holdDuration = Duration(seconds: 2);
+  static const _narrowHeaders = {'NO', 'QTY'};
 
   final TimelineService _service = TimelineService();
   late Future<Map<String, dynamic>> _future = _service.fetchSupplier(widget.supplierId);
   final ScrollController _horizontalScroll = ScrollController();
   final ScrollController _verticalScroll = ScrollController();
 
+  // Sorted column (original index), or null to keep the backend order
+  int? _sortColumn;
+  // Hidden columns: original index -> header label
+  final Map<int, String> _hiddenColumns = {};
+  Timer? _holdTimer;
+  // Set when a hold opened the restore dialog, so the tap that ends the hold does not also sort
+  bool _holdFired = false;
+
   @override
   void dispose() {
+    _holdTimer?.cancel();
     _horizontalScroll.dispose();
     _verticalScroll.dispose();
     super.dispose();
@@ -240,12 +258,33 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
             columnOrder[progressColumn] = imageColumn;
           }
 
+          final columns = <_TableColumn>[];
+          for (final column in columnOrder) {
+            if (_hiddenColumns.containsKey(column)) continue;
+            if (column == progressColumn) {
+              columns.add(_TableColumn(index: column, label: 'Progress', width: _progressWidth, isProgress: true));
+            } else {
+              final label = headers[column];
+              final width = _narrowHeaders.contains(label.toUpperCase()) ? _narrowColumnWidth : _columnWidth;
+              columns.add(_TableColumn(index: column, label: label, width: width));
+            }
+          }
+
+          final sortColumn = _sortColumn;
+          final sorted = sortColumn == null
+              ? products
+              : [for (final i in _sortOrder(products, sortColumn, progressColumn)) products[i]];
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text('Yellow cells: stage completed', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                child: Text(
+                  'Yellow cells: stage completed. Tap a header to sort, double tap to hide, '
+                  'right-click or hold a header 2 seconds to unhide.',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
               ),
               Expanded(
                 child: ScrollConfiguration(
@@ -261,33 +300,11 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                         child: SingleChildScrollView(
                           controller: _horizontalScroll,
                           scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            columnSpacing: 0,
-                            horizontalMargin: 0,
-                            dataRowMinHeight: _rowHeight,
-                            dataRowMaxHeight: _rowHeight,
-                            headingRowColor: WidgetStateProperty.all(kTimelineBordeaux.withValues(alpha: 0.1)),
-                            columns: [
-                              for (final column in columnOrder)
-                                column == progressColumn
-                                    ? DataColumn(label: _headerLabel('Progress', 100))
-                                    : DataColumn(label: _headerLabel(headers[column], _columnWidth)),
+                          child: Column(
+                            children: [
+                              _headerRow(columns),
+                              for (final product in sorted) _productRow(product, columns, stagePosition),
                             ],
-                            rows: products.map((product) {
-                              final cells = List<String>.from(product['cells'] as List);
-                              final stageDone = List<bool>.from(product['stage_done'] as List);
-                              return DataRow(
-                                cells: [
-                                  for (final column in columnOrder)
-                                    column == progressColumn
-                                        ? DataCell(_progressCell((product['pct'] as num).toDouble()))
-                                        : DataCell(_textCell(
-                                            cells[column],
-                                            done: stagePosition.containsKey(column) && stageDone[stagePosition[column]!],
-                                          )),
-                                ],
-                              );
-                            }).toList(),
                           ),
                         ),
                       ),
@@ -302,31 +319,189 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
-  Widget _headerLabel(String text, double width) {
-    return SizedBox(
-      width: width - 12,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
+  /// Row order for a sort on one column: numbers, percents and dates by size, text A to Z, blanks last.
+  List<int> _sortOrder(List<Map<String, dynamic>> products, int column, int progressColumn) {
+    final values = [
+      for (final product in products)
+        column == progressColumn ? '${product['pct']}' : (product['cells'] as List)[column].toString(),
+    ];
+    final present = [for (var i = 0; i < values.length; i++) if (values[i].trim().isNotEmpty) i];
+    final blanks = [for (var i = 0; i < values.length; i++) if (values[i].trim().isEmpty) i];
+
+    final numeric = present.every((i) => _parseNumber(values[i]) != null);
+    final dated = !numeric && present.every((i) => _parseDate(values[i]) != null);
+    int compare(int a, int b) {
+      if (numeric) return _parseNumber(values[a])!.compareTo(_parseNumber(values[b])!);
+      if (dated) return _parseDate(values[a])!.compareTo(_parseDate(values[b])!);
+      return values[a].trim().toUpperCase().compareTo(values[b].trim().toUpperCase());
+    }
+
+    present.sort((a, b) {
+      final result = compare(a, b);
+      return result != 0 ? result : a.compareTo(b);
+    });
+    return [...present, ...blanks];
+  }
+
+  static final _numberPattern = RegExp(r'^-?\d+(\.\d+)?$');
+  static final _datePattern = RegExp(r'^(\d{1,2})/(\d{1,2})(?:/(\d{2}|\d{4}))?$');
+
+  static double? _parseNumber(String text) {
+    final cleaned = text.replaceAll(RegExp(r'[,%\s]'), '');
+    return _numberPattern.hasMatch(cleaned) ? double.parse(cleaned) : null;
+  }
+
+  /// dd/mm or dd/mm/yy(yy) as a sortable yyyymmdd number (year 0 when missing).
+  static int? _parseDate(String text) {
+    final match = _datePattern.firstMatch(text.trim());
+    if (match == null) return null;
+    var year = int.parse(match.group(3) ?? '0');
+    if (year > 0 && year < 100) year += 2000;
+    return year * 10000 + int.parse(match.group(2)!) * 100 + int.parse(match.group(1)!);
+  }
+
+  void _hideColumn(_TableColumn column) {
+    setState(() {
+      _hiddenColumns[column.index] = column.label;
+      if (_sortColumn == column.index) _sortColumn = null;
+    });
+  }
+
+  Future<void> _showRestoreDialog() async {
+    final restore = await showDialog<Set<int>>(
+      context: context,
+      builder: (dialogContext) {
+        final selected = <int>{};
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Select Unhidden columns'),
+            content: _hiddenColumns.isEmpty
+                ? const Text('No hidden columns')
+                : SizedBox(
+                    width: 300,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final entry in _hiddenColumns.entries)
+                          CheckboxListTile(
+                            title: Text(entry.value),
+                            value: selected.contains(entry.key),
+                            onChanged: (checked) {
+                              setDialogState(() {
+                                if (checked == true) {
+                                  selected.add(entry.key);
+                                } else {
+                                  selected.remove(entry.key);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext, selected), child: const Text('OK')),
+            ],
+          ),
+        );
+      },
+    );
+    if (restore == null || restore.isEmpty) return;
+    setState(() => _hiddenColumns.removeWhere((index, _) => restore.contains(index)));
+  }
+
+  Widget _headerRow(List<_TableColumn> columns) {
+    return Listener(
+      onPointerDown: (event) {
+        if (event.kind == PointerDeviceKind.mouse) {
+          if (event.buttons == kSecondaryMouseButton) _showRestoreDialog();
+          return;
+        }
+        _holdFired = false;
+        _holdTimer?.cancel();
+        _holdTimer = Timer(_holdDuration, () {
+          _holdFired = true;
+          if (mounted) _showRestoreDialog();
+        });
+      },
+      onPointerUp: (_) => _holdTimer?.cancel(),
+      onPointerCancel: (_) => _holdTimer?.cancel(),
+      child: Row(
+        children: [
+          for (final column in columns) _headerCell(column, canHide: columns.length > 1),
+        ],
       ),
     );
   }
 
-  Widget _textCell(String text, {required bool done}) {
+  Widget _headerCell(_TableColumn column, {required bool canHide}) {
+    final sorted = _sortColumn == column.index;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_holdFired) return;
+        setState(() => _sortColumn = column.index);
+      },
+      onDoubleTap: canHide ? () => _hideColumn(column) : null,
+      child: Container(
+        width: column.width,
+        height: _headerHeight,
+        alignment: Alignment.centerLeft,
+        padding: EdgeInsets.symmetric(horizontal: _paddingFor(column.width)),
+        color: kTimelineBordeaux.withValues(alpha: 0.1),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                column.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (sorted) const Icon(Icons.arrow_upward, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _productRow(Map<String, dynamic> product, List<_TableColumn> columns, Map<int, int> stagePosition) {
+    final cells = List<String>.from(product['cells'] as List);
+    final stageDone = List<bool>.from(product['stage_done'] as List);
+    return Row(
+      children: [
+        for (final column in columns)
+          column.isProgress
+              ? _progressCell((product['pct'] as num).toDouble(), column.width)
+              : _textCell(
+                  cells[column.index],
+                  width: column.width,
+                  done: stagePosition.containsKey(column.index) && stageDone[stagePosition[column.index]!],
+                ),
+      ],
+    );
+  }
+
+  double _paddingFor(double width) => width == _narrowColumnWidth ? 4 : 12;
+
+  Widget _textCell(String text, {required double width, required bool done}) {
     return Container(
-      width: _columnWidth,
+      width: width,
       height: _rowHeight,
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: EdgeInsets.symmetric(horizontal: _paddingFor(width)),
       color: done ? const Color(0xFFFFFF00) : null,
       child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis),
     );
   }
 
-  Widget _progressCell(double pct) {
+  Widget _progressCell(double pct, double width) {
     final color = timelineProgressColor(pct);
     return SizedBox(
-      width: 100,
+      width: width,
       height: _rowHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -347,4 +522,13 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
       ),
     );
   }
+}
+
+class _TableColumn {
+  const _TableColumn({required this.index, required this.label, required this.width, this.isProgress = false});
+
+  final int index;
+  final String label;
+  final double width;
+  final bool isProgress;
 }
