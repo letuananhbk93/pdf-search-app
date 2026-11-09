@@ -103,7 +103,7 @@ class _TimelinePoScreenState extends State<TimelinePoScreen> {
               return TimelineProgressCard(
                 title: poLabel,
                 pct: (po['pct'] as num).toDouble(),
-                subtitle: 'Finished: ${po['finished_count']}/${po['product_count']} products',
+                subtitle: 'Finished: ${(po['finished_qty'] as num).round()}/${(po['qty'] as num).round()} pcs',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -216,6 +216,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   int? _sortColumn;
   // Hidden columns: original index -> header label
   final Map<int, String> _hiddenColumns = {};
+  // Product rows (index in the backend list) shown at full text height
+  final Set<int> _expandedRows = {};
   Timer? _holdTimer;
   // Set when a hold opened the restore dialog, so the tap that ends the hold does not also sort
   bool _holdFired = false;
@@ -271,9 +273,9 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           }
 
           final sortColumn = _sortColumn;
-          final sorted = sortColumn == null
-              ? products
-              : [for (final i in _sortOrder(products, sortColumn, progressColumn)) products[i]];
+          final order = sortColumn == null
+              ? List<int>.generate(products.length, (i) => i)
+              : _sortOrder(products, sortColumn, progressColumn);
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,8 +283,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
-                  'Yellow cells: stage completed. Tap a header to sort, double tap to hide, '
-                  'right-click or hold a header 2 seconds to unhide.',
+                  'Yellow cells: stage completed. Tap a header to sort (tap again to undo), double tap to hide, '
+                  'right-click or hold a header 2 seconds to unhide. Tap a row to show its full text.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
@@ -303,7 +305,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                           child: Column(
                             children: [
                               _headerRow(columns),
-                              for (final product in sorted) _productRow(product, columns, stagePosition),
+                              for (final index in order) _productRow(index, products[index], columns, stagePosition),
                             ],
                           ),
                         ),
@@ -441,7 +443,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
       behavior: HitTestBehavior.opaque,
       onTap: () {
         if (_holdFired) return;
-        setState(() => _sortColumn = column.index);
+        setState(() => _sortColumn = _sortColumn == column.index ? null : column.index);
       },
       onDoubleTap: canHide ? () => _hideColumn(column) : null,
       child: Container(
@@ -468,10 +470,12 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
-  Widget _productRow(Map<String, dynamic> product, List<_TableColumn> columns, Map<int, int> stagePosition) {
+  Widget _productRow(int index, Map<String, dynamic> product, List<_TableColumn> columns, Map<int, int> stagePosition) {
     final cells = List<String>.from(product['cells'] as List);
     final stageDone = List<bool>.from(product['stage_done'] as List);
-    return Row(
+    final expanded = _expandedRows.contains(index);
+    final row = Row(
+      crossAxisAlignment: expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
       children: [
         for (final column in columns)
           column.isProgress
@@ -480,21 +484,28 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                   cells[column.index],
                   width: column.width,
                   done: stagePosition.containsKey(column.index) && stageDone[stagePosition[column.index]!],
+                  expanded: expanded,
                 ),
       ],
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => expanded ? _expandedRows.remove(index) : _expandedRows.add(index)),
+      // Expanded rows are as tall as their tallest cell, so the full text shows
+      child: expanded ? IntrinsicHeight(child: row) : row,
     );
   }
 
   double _paddingFor(double width) => width == _narrowColumnWidth ? 4 : 12;
 
-  Widget _textCell(String text, {required double width, required bool done}) {
+  Widget _textCell(String text, {required double width, required bool done, required bool expanded}) {
     return Container(
       width: width,
-      height: _rowHeight,
+      height: expanded ? null : _rowHeight,
       alignment: Alignment.centerLeft,
-      padding: EdgeInsets.symmetric(horizontal: _paddingFor(width)),
+      padding: EdgeInsets.symmetric(horizontal: _paddingFor(width), vertical: expanded ? 8 : 0),
       color: done ? const Color(0xFFFFFF00) : null,
-      child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis),
+      child: Text(text, maxLines: expanded ? null : 2, overflow: expanded ? null : TextOverflow.ellipsis),
     );
   }
 
