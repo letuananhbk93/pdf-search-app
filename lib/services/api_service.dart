@@ -70,15 +70,8 @@ class ApiService {
   // Fetch specific color database
   Future<List<dynamic>> fetchColorTable(String tableName) async {
     try {
-      print('Fetching color table: $tableName');
-      print('URL: ${_dio.options.baseUrl}colors/$tableName');
-      
       final response = await _dio.get('colors/$tableName');
-      
-      print('Response status: ${response.statusCode}');
-      print('Response data type: ${response.data.runtimeType}');
-      print('Response data: ${response.data}');
-      
+
       if (response.statusCode == 200) {
         if (response.data is List) {
           return List<dynamic>.from(response.data);
@@ -97,12 +90,8 @@ class ApiService {
         throw Exception('Server error: ${response.statusCode}');
       }
     } on DioException catch (e) {
-      print('DioException: ${e.type}');
-      print('Error message: ${e.message}');
-      print('Response: ${e.response?.data}');
       throw Exception('Network error: ${e.message}');
     } catch (e) {
-      print('General error: $e');
       throw Exception('Error: $e');
     }
   }
@@ -110,13 +99,8 @@ class ApiService {
   // Search across all color databases
   Future<List<dynamic>> searchColors(String query) async {
     try {
-      print('Searching colors: $query');
       final response = await _dio.get('colors/search', queryParameters: {'query': query});
-      
-      print('Search response status: ${response.statusCode}');
-      print('Search response data type: ${response.data.runtimeType}');
-      print('Search response full data: ${response.data}');
-      
+
       if (response.statusCode == 200) {
         if (response.data is List) {
           return List<dynamic>.from(response.data);

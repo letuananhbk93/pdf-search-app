@@ -13,16 +13,42 @@ class ColorsScreen extends ConsumerStatefulWidget {
 }
 
 class _ColorsScreenState extends ConsumerState<ColorsScreen> {
+  // Same order as the tabs below
+  static const List<String> _tableNames = [
+    'lacquer_fin',
+    'custom_color',
+    'metal_fin',
+    'wood_fin',
+    'effect_color_swatch_statistics',
+    'thien_hong',
+    'tam_viet',
+    'dinh_thieu',
+    'mai_home',
+  ];
+
   final ApiService _apiService = ApiService();
   bool _sortAscending = true; // Track sort order
   int _sortColumnIndex = 0; // Track which column is being sorted (0 = No., 5 = PO)
-  int _refreshKey = 0; // Key to force rebuild of tabs
+  // One request per table, reused on every rebuild (sorting etc.) instead of refetching
+  final Map<String, Future<List<dynamic>>> _tableFutures = {};
   String? _lastUpdateDate; // Track last update date
 
   @override
   void initState() {
     super.initState();
+    _loadAllTables();
     _fetchLastUpdateDate();
+  }
+
+  // Start (or restart) the request for one table
+  void _loadTable(String tableName) {
+    _tableFutures[tableName] = _apiService.fetchColorTable(tableName);
+  }
+
+  void _loadAllTables() {
+    for (final tableName in _tableNames) {
+      _loadTable(tableName);
+    }
   }
 
   // Fetch last update date from API
@@ -30,10 +56,12 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
     try {
       // You'll need to add this method to your ApiService
       final updateInfo = await _apiService.getLastUpdateInfo('colors');
+      if (!mounted) return;
       setState(() {
         _lastUpdateDate = updateInfo['last_update'] ?? 'Unknown';
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _lastUpdateDate = 'Unknown';
       });
@@ -111,22 +139,20 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                     ),
                   ).then((_) {
                     // Reload data and update date after returning from upload
-                    setState(() {
-                      _refreshKey++; // Force rebuild
-                    });
+                    setState(_loadAllTables);
                     _fetchLastUpdateDate(); // Refresh the update date
                   });
                   break;
                 case 'refresh':
-                  setState(() {
-                    _refreshKey++; // Force rebuild
-                  });
+                  setState(_loadAllTables);
                   _fetchLastUpdateDate(); // Also refresh the update date
                   break;
                 case 'search':
                   showSearch(
                     context: context,
-                    delegate: ColorSearchDelegate(),
+                    delegate: ColorSearchDelegate(
+                      onChanged: (tableName) => setState(() => _loadTable(tableName)),
+                    ),
                   );
                   break;
               }
@@ -177,8 +203,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
         ],
       ),
       body: DefaultTabController(
-        key: ValueKey(_refreshKey),
-        length: 9,
+        length: _tableNames.length,
         child: Column(
           children: [
             const TabBar(
@@ -200,17 +225,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
             ),
             Expanded(
               child: TabBarView(
-                children: [
-                  _buildTab('lacquer_fin'),
-                  _buildTab('custom_color'),
-                  _buildTab('metal_fin'),
-                  _buildTab('wood_fin'),
-                  _buildTab('effect_color_swatch_statistics'),
-                  _buildTab('thien_hong'),
-                  _buildTab('tam_viet'),
-                  _buildTab('dinh_thieu'),
-                  _buildTab('mai_home'),
-                ],
+                children: _tableNames.map(_buildTab).toList(),
               ),
             ),
           ],
@@ -221,7 +236,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
 
   Widget _buildTab(String tableName) {
     return FutureBuilder<List<dynamic>>(
-      future: _apiService.fetchColorTable(tableName),
+      future: _tableFutures[tableName],
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -256,7 +271,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => setState(() {}),
+                    onPressed: () => setState(() => _loadTable(tableName)),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -385,7 +400,6 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
             child: DataTable(
               sortColumnIndex: _sortColumnIndex,
               sortAscending: _sortAscending,
-              dataRowMinHeight: 100,
               dataRowMaxHeight: 120,
               headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
               columns: [
@@ -557,7 +571,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(displayName),
+        title: SelectableText(displayName),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,7 +644,7 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Expanded(child: Text(value.toString())),
+          Expanded(child: SelectableText(value.toString())),
         ],
       ),
     );
@@ -664,18 +678,40 @@ class _ColorsScreenState extends ConsumerState<ColorsScreen> {
       ),
     );
     
-    // If changes were made, refresh the list
+    // If changes were made, reload that table
     if (result == true) {
-      setState(() {
-        _refreshKey++; // Force rebuild to refresh data
-      });
+      setState(() => _loadTable(tableName));
     }
   }
 }
 
 // Search delegate for searching across all color databases
 class ColorSearchDelegate extends SearchDelegate {
+  ColorSearchDelegate({this.onChanged});
+
   final ApiService _apiService = ApiService();
+  // Called with the table name after an item is edited from the results
+  final void Function(String tableName)? onChanged;
+  // Results per query, so suggestions and results share one request and typing back shows cached results
+  final Map<String, Future<List<dynamic>>> _searchCache = {};
+
+  // Wait briefly after typing so only a pause in typing sends a request
+  Future<List<dynamic>> _searchFor(String searchText) {
+    return _searchCache.putIfAbsent(searchText, () async {
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (searchText != query) {
+        // User kept typing, this request is no longer needed
+        _searchCache.remove(searchText);
+        return <dynamic>[];
+      }
+      try {
+        return await _apiService.searchColors(searchText);
+      } catch (e) {
+        _searchCache.remove(searchText);
+        rethrow;
+      }
+    });
+  }
 
   // Convert sup_inchart acronyms to full names
   String _convertSupInchart(String? value) {
@@ -730,7 +766,7 @@ class ColorSearchDelegate extends SearchDelegate {
     }
 
     return FutureBuilder<List<dynamic>>(
-      future: _apiService.searchColors(query),
+      future: _searchFor(query),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -783,7 +819,6 @@ class ColorSearchDelegate extends SearchDelegate {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      dataRowMinHeight: 100,
                       dataRowMaxHeight: 120,
                       headingRowColor: WidgetStateProperty.all(const Color(0xFFC00000).withValues(alpha: 0.1)),
                       columns: const [
@@ -892,7 +927,7 @@ class ColorSearchDelegate extends SearchDelegate {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text((item['main_color'] ?? item['name'] ?? 'Details').toString()),
+          title: SelectableText((item['main_color'] ?? item['name'] ?? 'Details').toString()),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -922,7 +957,7 @@ class ColorSearchDelegate extends SearchDelegate {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(item['name'] ?? item['color_name'] ?? 'Details'),
+        title: SelectableText(item['name'] ?? item['color_name'] ?? 'Details'),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -995,7 +1030,7 @@ class ColorSearchDelegate extends SearchDelegate {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Expanded(child: Text(value.toString())),
+          Expanded(child: SelectableText(value.toString())),
         ],
       ),
     );
@@ -1013,10 +1048,9 @@ class ColorSearchDelegate extends SearchDelegate {
       ),
     );
     
-    // If changes were made, close the search and let the main screen refresh
+    // If changes were made, let the main screen reload this table
     if (result == true) {
-      // You can optionally show a message here
-      // The main screen will be refreshed when the search is closed
+      onChanged?.call(tableName);
     }
   }
 }
