@@ -273,9 +273,11 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           }
 
           final sortColumn = _sortColumn;
-          final order = sortColumn == null
-              ? List<int>.generate(products.length, (i) => i)
+          final productOrder = sortColumn == null
+              ? [for (var i = 0; i < products.length; i++) if (!_isNote(products[i])) i]
               : _sortOrder(products, sortColumn, progressColumn);
+          final order = _withNotes(productOrder, products);
+          final tableWidth = columns.fold<double>(0, (total, column) => total + column.width);
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,7 +285,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
-                  'Yellow cells: stage completed. Tap a header to sort (tap again to undo), double tap to hide, '
+                  'Yellow cells: stage completed. Blue rows are notes (no QTY), not products. '
+                  'Tap a header to sort (tap again to undo), double tap to hide, '
                   'right-click or hold a header 2 seconds to unhide. Tap a row to show its full text.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
@@ -305,7 +308,11 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                           child: Column(
                             children: [
                               _headerRow(columns),
-                              for (final index in order) _productRow(index, products[index], columns, stagePosition),
+                              for (final index in order)
+                                if (_isNote(products[index]))
+                                  _noteRow(products[index], tableWidth)
+                                else
+                                  _productRow(index, products[index], columns, stagePosition),
                             ],
                           ),
                         ),
@@ -321,14 +328,62 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
+  static bool _isNote(Map<String, dynamic> product) => product['is_comment'] == true;
+
+  /// Note rows stay with the product that follows them in the backend order, so sorting does not scatter them.
+  /// Notes after the last product stay at the end.
+  List<int> _withNotes(List<int> productOrder, List<Map<String, dynamic>> products) {
+    final notesBefore = <int, List<int>>{};
+    var pending = <int>[];
+    for (var i = 0; i < products.length; i++) {
+      if (_isNote(products[i])) {
+        pending.add(i);
+      } else {
+        notesBefore[i] = pending;
+        pending = <int>[];
+      }
+    }
+    final order = <int>[];
+    for (final index in productOrder) {
+      order.addAll(notesBefore[index] ?? const <int>[]);
+      order.add(index);
+    }
+    order.addAll(pending);
+    return order;
+  }
+
+  /// A note across the whole table: bigger and bold, so the rows below it are easy to tell apart.
+  Widget _noteRow(Map<String, dynamic> note, double width) {
+    return Container(
+      width: width,
+      constraints: const BoxConstraints(minHeight: _rowHeight + 16),
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3F2FD),
+        border: Border(
+          top: BorderSide(color: Colors.blue.shade100),
+          bottom: BorderSide(color: Colors.blue.shade100),
+          left: BorderSide(color: Colors.blue.shade800, width: 6),
+        ),
+      ),
+      child: Text(
+        note['product'] as String,
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+      ),
+    );
+  }
+
   /// Row order for a sort on one column: numbers, percents and dates by size, text A to Z, blanks last.
+  /// Note rows are not sorted; see _withNotes.
   List<int> _sortOrder(List<Map<String, dynamic>> products, int column, int progressColumn) {
     final values = [
       for (final product in products)
         column == progressColumn ? '${product['pct']}' : (product['cells'] as List)[column].toString(),
     ];
-    final present = [for (var i = 0; i < values.length; i++) if (values[i].trim().isNotEmpty) i];
-    final blanks = [for (var i = 0; i < values.length; i++) if (values[i].trim().isEmpty) i];
+    final productRows = [for (var i = 0; i < products.length; i++) if (!_isNote(products[i])) i];
+    final present = [for (final i in productRows) if (values[i].trim().isNotEmpty) i];
+    final blanks = [for (final i in productRows) if (values[i].trim().isEmpty) i];
 
     final numeric = present.every((i) => _parseNumber(values[i]) != null);
     final dated = !numeric && present.every((i) => _parseDate(values[i]) != null);
