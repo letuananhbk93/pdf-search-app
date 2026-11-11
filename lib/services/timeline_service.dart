@@ -45,21 +45,41 @@ class TimelineService {
         return Map<String, dynamic>.from(response.data as Map);
       });
 
-  Future<Map<String, dynamic>> _uploadFile(String path, PlatformFile file, {bool? allowOlder}) => _guard(() async {
-        final bytes = file.bytes;
-        if (bytes == null) {
-          throw TimelineException('The file could not be read. Please pick it again.');
-        }
-        final form = FormData.fromMap({
-          'file': MultipartFile.fromBytes(bytes, filename: file.name),
-          if (allowOlder != null) 'allow_older': allowOlder.toString(),
-        });
-        final response = await _dio.post(path, data: form);
-        return Map<String, dynamic>.from(response.data as Map);
+  /// The server runs uploads as background jobs (a large workbook takes longer than a request may),
+  /// so this starts the job and waits for its result.
+  Future<Map<String, dynamic>> _uploadFile(String path, PlatformFile file, {bool? allowOlder}) async {
+    final jobId = await _guard(() async {
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw TimelineException('The file could not be read. Please pick it again.');
+      }
+      final form = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: file.name),
+        if (allowOlder != null) 'allow_older': allowOlder.toString(),
       });
+      final response = await _dio.post(path, data: form);
+      return (response.data as Map)['job_id'] as int;
+    });
+    return _waitForJob(jobId);
+  }
+
+  /// Polls an upload job every 2 seconds for up to 10 minutes.
+  Future<Map<String, dynamic>> _waitForJob(int jobId) async {
+    for (var attempt = 0; attempt < 300; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      final job = await _get('timeline/jobs/$jobId');
+      if (job['status'] == 'done') {
+        return Map<String, dynamic>.from(job['result'] as Map);
+      }
+      if (job['status'] == 'error') {
+        throw TimelineException(job['error']?.toString() ?? 'The upload failed.');
+      }
+    }
+    throw TimelineException('The upload is still running on the server. Check the PO list in a few minutes.');
+  }
 
   /// Turns Dio errors into a message the screens can show (FastAPI puts it in "detail").
-  Future<Map<String, dynamic>> _guard(Future<Map<String, dynamic>> Function() request) async {
+  Future<T> _guard<T>(Future<T> Function() request) async {
     try {
       return await request();
     } on DioException catch (e) {
