@@ -206,6 +206,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   static const double _headerHeight = 56;
   static const Duration _holdDuration = Duration(seconds: 2);
   static const _narrowHeaders = {'NO', 'QTY'};
+  static final _zebraColor = Colors.grey.shade100;
 
   final TimelineService _service = TimelineService();
   late Future<Map<String, dynamic>> _future = _service.fetchSupplier(widget.supplierId);
@@ -279,6 +280,15 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           final order = _withNotes(productOrder, products);
           final tableWidth = columns.fold<double>(0, (total, column) => total + column.width);
 
+          // Zebra striping on every other product row, only across the columns from NO to Progress
+          final productRows = [for (final index in order) if (!_isNote(products[index])) index];
+          final zebraRows = {for (var i = 1; i < productRows.length; i += 2) productRows[i]};
+          final noPosition = columns.indexWhere((column) => column.label.toUpperCase() == 'NO');
+          final progressPosition = columns.indexWhere((column) => column.isProgress);
+          final zebraColumns = {
+            for (var c = noPosition < 0 ? 0 : noPosition; c <= (progressPosition < 0 ? columns.length - 1 : progressPosition); c++) c,
+          };
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -312,7 +322,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                                 if (_isNote(products[index]))
                                   _noteRow(products[index], tableWidth)
                                 else
-                                  _productRow(index, products[index], columns, stagePosition),
+                                  _productRow(index, products[index], columns, stagePosition, zebraRows.contains(index), zebraColumns),
                             ],
                           ),
                         ),
@@ -525,21 +535,29 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
-  Widget _productRow(int index, Map<String, dynamic> product, List<_TableColumn> columns, Map<int, int> stagePosition) {
+  Widget _productRow(
+    int index,
+    Map<String, dynamic> product,
+    List<_TableColumn> columns,
+    Map<int, int> stagePosition,
+    bool zebra,
+    Set<int> zebraColumns,
+  ) {
     final cells = List<String>.from(product['cells'] as List);
     final stageDone = List<bool>.from(product['stage_done'] as List);
     final expanded = _expandedRows.contains(index);
     final row = Row(
       crossAxisAlignment: expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
       children: [
-        for (final column in columns)
-          column.isProgress
-              ? _progressCell((product['pct'] as num).toDouble(), column.width)
+        for (var c = 0; c < columns.length; c++)
+          columns[c].isProgress
+              ? _progressCell((product['pct'] as num).toDouble(), columns[c].width, background: zebra && zebraColumns.contains(c) ? _zebraColor : null)
               : _textCell(
-                  cells[column.index],
-                  width: column.width,
-                  done: stagePosition.containsKey(column.index) && stageDone[stagePosition[column.index]!],
+                  cells[columns[c].index],
+                  width: columns[c].width,
+                  done: stagePosition.containsKey(columns[c].index) && stageDone[stagePosition[columns[c].index]!],
                   expanded: expanded,
+                  background: zebra && zebraColumns.contains(c) ? _zebraColor : null,
                 ),
       ],
     );
@@ -553,22 +571,23 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 
   double _paddingFor(double width) => width == _narrowColumnWidth ? 4 : 12;
 
-  Widget _textCell(String text, {required double width, required bool done, required bool expanded}) {
+  Widget _textCell(String text, {required double width, required bool done, required bool expanded, Color? background}) {
     return Container(
       width: width,
       height: expanded ? null : _rowHeight,
       alignment: Alignment.centerLeft,
       padding: EdgeInsets.symmetric(horizontal: _paddingFor(width), vertical: expanded ? 8 : 0),
-      color: done ? const Color(0xFFFFFF00) : null,
+      color: done ? const Color(0xFFFFFF00) : background,
       child: Text(text, maxLines: expanded ? null : 2, overflow: expanded ? null : TextOverflow.ellipsis),
     );
   }
 
-  Widget _progressCell(double pct, double width) {
+  Widget _progressCell(double pct, double width, {Color? background}) {
     final color = timelineProgressColor(pct);
-    return SizedBox(
+    return Container(
       width: width,
       height: _rowHeight,
+      color: background,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(
