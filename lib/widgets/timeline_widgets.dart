@@ -17,11 +17,12 @@ class TimelineScrollBehavior extends MaterialScrollBehavior {
       };
 }
 
-AppBar buildTimelineAppBar({List<Widget> actions = const []}) {
+AppBar buildTimelineAppBar({List<Widget> actions = const [], bool automaticallyImplyLeading = true}) {
   return AppBar(
     title: const Text('TIMELINE', style: TextStyle(color: Colors.white)),
     backgroundColor: kTimelineBordeaux,
     iconTheme: const IconThemeData(color: Colors.white),
+    automaticallyImplyLeading: automaticallyImplyLeading,
     actions: actions,
   );
 }

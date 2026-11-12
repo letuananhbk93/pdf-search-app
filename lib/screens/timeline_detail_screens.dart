@@ -187,12 +187,15 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
 }
 
 /// Screen 4: the supplier's timeline table; completed stage cells are tinted yellow.
-/// Tap a header to sort by it, double tap to hide it, right-click or hold a header for 2 seconds to unhide.
+/// Screen 1 shows block 1 and the NOTES column. FOR MANAGER (forManager: true) shows blocks 2 and 3 with the
+/// colours from the sheet. Tap a header to sort by it, double tap to hide it, right-click or hold a header for
+/// 2 seconds to unhide.
 class TimelineTableScreen extends StatefulWidget {
-  const TimelineTableScreen({super.key, required this.supplierId, required this.path});
+  const TimelineTableScreen({super.key, required this.supplierId, required this.path, this.forManager = false});
 
   final int supplierId;
   final List<String> path;
+  final bool forManager;
 
   @override
   State<TimelineTableScreen> createState() => _TimelineTableScreenState();
@@ -207,6 +210,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   static const Duration _holdDuration = Duration(seconds: 2);
   static const _narrowHeaders = {'NO', 'QTY'};
   static final _zebraColor = Colors.grey.shade100;
+  static final _block3Colour = Colors.lightBlue.shade100;
 
   final TimelineService _service = TimelineService();
   late Future<Map<String, dynamic>> _future = _service.fetchSupplier(widget.supplierId);
@@ -236,7 +240,18 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: buildTimelineAppBar(),
+      appBar: widget.forManager
+          ? buildTimelineAppBar(
+              automaticallyImplyLeading: false,
+              actions: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  label: const Text('Back', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            )
+          : buildTimelineAppBar(),
       body: TimelineBody(
         path: widget.path,
         future: _future,
@@ -245,6 +260,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           final headers = List<String>.from(data['headers'] as List);
           final stageColumns = List<int>.from(data['stage_columns'] as List);
           final products = List<Map<String, dynamic>>.from(data['products'] as List);
+          final blocks = List<Map<String, dynamic>>.from(data['blocks'] as List? ?? const []);
           if (products.isEmpty) {
             return const Center(child: Text('No products', style: TextStyle(color: Colors.grey)));
           }
@@ -252,24 +268,43 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           // Column index -> position in stage_done (only stage columns have one)
           final stagePosition = {for (var i = 0; i < stageColumns.length; i++) stageColumns[i]: i};
 
-          // Progress is appended after the backend columns; swap it with IMAGE so it sits where IMAGE was
+          // Column index -> block number (0 = block 1). Columns before the first block (NO, PRODUCT, IMAGE...)
+          // belong to no block and show on both screens.
+          final blockOf = <int, int>{};
+          for (var b = 0; b < blocks.length; b++) {
+            for (final column in List<int>.from(blocks[b]['columns'] as List)) {
+              blockOf[column] = b;
+            }
+          }
+          final noteColumn = headers.indexWhere((header) => header.toUpperCase() == 'NOTES');
+          bool shownHere(int column) {
+            final block = blockOf[column];
+            if (block == null) return true;
+            return widget.forManager ? block >= 1 : block == 0 || column == noteColumn;
+          }
+          final showManagerButton = !widget.forManager && blocks.length >= 2;
+
+          // Progress is appended after the backend columns; swap it with IMAGE so it sits where IMAGE was.
+          // Only on the sheet view: the FOR MANAGER view keeps the sheet's own column order.
           final progressColumn = headers.length;
           final imageColumn = headers.indexWhere((header) => header.toUpperCase() == 'IMAGE');
-          final columnOrder = List<int>.generate(headers.length + 1, (i) => i);
-          if (imageColumn >= 0) {
+          final columnOrder = List<int>.generate(headers.length + (widget.forManager ? 0 : 1), (i) => i);
+          if (!widget.forManager && imageColumn >= 0) {
             columnOrder[imageColumn] = progressColumn;
             columnOrder[progressColumn] = imageColumn;
           }
 
           final columns = <_TableColumn>[];
           for (final column in columnOrder) {
-            if (_hiddenColumns.containsKey(column)) continue;
+            if (_hiddenColumns.containsKey(column) || !shownHere(column)) continue;
             if (column == progressColumn) {
               columns.add(_TableColumn(index: column, label: 'Progress', width: _progressWidth, isProgress: true));
             } else {
               final label = headers[column];
               final width = _narrowHeaders.contains(label.toUpperCase()) ? _narrowColumnWidth : _columnWidth;
-              columns.add(_TableColumn(index: column, label: label, width: width));
+              // Block 3 is one fixed colour on the FOR MANAGER view, so it stands out from block 2
+              final fixed = widget.forManager && (blockOf[column] ?? 0) >= 2 ? _block3Colour : null;
+              columns.add(_TableColumn(index: column, label: label, width: width, fixedBackground: fixed));
             }
           }
 
@@ -280,9 +315,9 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           final order = _withNotes(productOrder, products);
           final tableWidth = columns.fold<double>(0, (total, column) => total + column.width);
 
-          // Zebra striping on every other product row, only across the columns from NO to Progress
+          // Zebra striping on every other product row, only across the columns from NO to Progress (sheet view)
           final productRows = [for (final index in order) if (!_isNote(products[index])) index];
-          final zebraRows = {for (var i = 1; i < productRows.length; i += 2) productRows[i]};
+          final zebraRows = widget.forManager ? <int>{} : {for (var i = 1; i < productRows.length; i += 2) productRows[i]};
           final noPosition = columns.indexWhere((column) => column.label.toUpperCase() == 'NO');
           final progressPosition = columns.indexWhere((column) => column.isProgress);
           final zebraColumns = {
@@ -292,14 +327,43 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  'Yellow cells: stage completed. Blue rows are notes (no QTY), not products. '
-                  'Tap a header to sort (tap again to undo), double tap to hide, '
-                  'right-click or hold a header 2 seconds to unhide. Tap a row to show its full text.',
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Text(
+                        widget.forManager
+                            ? 'Cells show the colours from the sheet. Block 3 is light blue. '
+                                'Tap a header to sort (tap again to undo), double tap to hide, '
+                                'right-click or hold a header 2 seconds to unhide. Tap a row to show its full text.'
+                            : 'Yellow cells: stage completed. Blue rows are notes (no QTY), not products. '
+                                'Tap a header to sort (tap again to undo), double tap to hide, '
+                                'right-click or hold a header 2 seconds to unhide. Tap a row to show its full text.',
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                  ),
+                  if (showManagerButton)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TimelineTableScreen(
+                              supplierId: widget.supplierId,
+                              path: widget.path,
+                              forManager: true,
+                            ),
+                          ),
+                        ),
+                        child: const Text('FOR MANAGER'),
+                      ),
+                    ),
+                ],
               ),
               Expanded(
                 child: ScrollConfiguration(
@@ -555,9 +619,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
               : _textCell(
                   cells[columns[c].index],
                   width: columns[c].width,
-                  done: stagePosition.containsKey(columns[c].index) && stageDone[stagePosition[columns[c].index]!],
                   expanded: expanded,
-                  background: zebra && zebraColumns.contains(c) ? _zebraColor : null,
+                  background: _cellBackground(columns[c], product, stagePosition, stageDone, zebra && zebraColumns.contains(c)),
                 ),
       ],
     );
@@ -569,15 +632,31 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
+  /// FOR MANAGER: the sheet's own colour (block 3 fixed). Sheet view: yellow when the stage is done, else zebra.
+  Color? _cellBackground(_TableColumn column, Map<String, dynamic> product, Map<int, int> stagePosition,
+      List<bool> stageDone, bool zebraCell) {
+    if (widget.forManager) return column.fixedBackground ?? _storedColour(product, column.index);
+    final position = stagePosition[column.index];
+    if (position != null && stageDone[position]) return const Color(0xFFFFFF00);
+    return zebraCell ? _zebraColor : null;
+  }
+
+  /// The colour stored at sync for one cell, as '#RRGGBB'. Null when the sheet has no fill there.
+  static Color? _storedColour(Map<String, dynamic> product, int column) {
+    final colours = product['colours'] as List? ?? const [];
+    if (column >= colours.length || colours[column] == null) return null;
+    return Color(0xFF000000 | int.parse((colours[column] as String).substring(1), radix: 16));
+  }
+
   double _paddingFor(double width) => width == _narrowColumnWidth ? 4 : 12;
 
-  Widget _textCell(String text, {required double width, required bool done, required bool expanded, Color? background}) {
+  Widget _textCell(String text, {required double width, required bool expanded, Color? background}) {
     return Container(
       width: width,
       height: expanded ? null : _rowHeight,
       alignment: Alignment.centerLeft,
       padding: EdgeInsets.symmetric(horizontal: _paddingFor(width), vertical: expanded ? 8 : 0),
-      color: done ? const Color(0xFFFFFF00) : background,
+      color: background,
       child: Text(text, maxLines: expanded ? null : 2, overflow: expanded ? null : TextOverflow.ellipsis),
     );
   }
@@ -610,10 +689,11 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 }
 
 class _TableColumn {
-  const _TableColumn({required this.index, required this.label, required this.width, this.isProgress = false});
+  const _TableColumn({required this.index, required this.label, required this.width, this.isProgress = false, this.fixedBackground});
 
   final int index;
   final String label;
   final double width;
   final bool isProgress;
+  final Color? fixedBackground;
 }
