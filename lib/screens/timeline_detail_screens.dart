@@ -211,6 +211,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   static const _narrowHeaders = {'NO', 'QTY'};
   static final _zebraColor = Colors.grey.shade100;
   static final _block3Colour = Colors.lightBlue.shade100;
+  static final _weekPattern = RegExp(r'^(\d+)(\.0+)?$');
 
   final TimelineService _service = TimelineService();
   late Future<Map<String, dynamic>> _future = _service.fetchSupplier(widget.supplierId);
@@ -283,6 +284,10 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
             return widget.forManager ? block >= 1 : block == 0 || column == noteColumn;
           }
           final showManagerButton = !widget.forManager && blocks.length >= 2;
+          // FOR MANAGER: the stage columns of blocks 2 and 3 hold week numbers, shown as W6 (Week 6)
+          final weekStages = {
+            for (var b = 1; b < blocks.length; b++) ...List<int>.from(blocks[b]['stage_columns'] as List),
+          };
 
           // Progress is appended after the backend columns; swap it with IMAGE so it sits where IMAGE was.
           // Only on the sheet view: the FOR MANAGER view keeps the sheet's own column order.
@@ -304,7 +309,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
               final width = _narrowHeaders.contains(label.toUpperCase()) ? _narrowColumnWidth : _columnWidth;
               // Block 3 is one fixed colour on the FOR MANAGER view, so it stands out from block 2
               final fixed = widget.forManager && (blockOf[column] ?? 0) >= 2 ? _block3Colour : null;
-              columns.add(_TableColumn(index: column, label: label, width: width, fixedBackground: fixed));
+              final weekStage = widget.forManager && weekStages.contains(column);
+              columns.add(_TableColumn(index: column, label: label, width: width, fixedBackground: fixed, weekStage: weekStage));
             }
           }
 
@@ -617,7 +623,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           columns[c].isProgress
               ? _progressCell((product['pct'] as num).toDouble(), columns[c].width, background: zebra && zebraColumns.contains(c) ? _zebraColor : null)
               : _textCell(
-                  cells[columns[c].index],
+                  columns[c].weekStage ? _weekLabel(cells[columns[c].index]) : cells[columns[c].index],
                   width: columns[c].width,
                   expanded: expanded,
                   background: _cellBackground(columns[c], product, stagePosition, stageDone, zebra && zebraColumns.contains(c)),
@@ -639,6 +645,12 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     final position = stagePosition[column.index];
     if (position != null && stageDone[position]) return const Color(0xFFFFFF00);
     return zebraCell ? _zebraColor : null;
+  }
+
+  /// A week number as 'W6'. Other text is unchanged.
+  String _weekLabel(String text) {
+    final match = _weekPattern.firstMatch(text.trim());
+    return match == null ? text : 'W${match.group(1)}';
   }
 
   /// The colour stored at sync for one cell, as '#RRGGBB'. Null when the sheet has no fill there.
@@ -689,11 +701,19 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 }
 
 class _TableColumn {
-  const _TableColumn({required this.index, required this.label, required this.width, this.isProgress = false, this.fixedBackground});
+  const _TableColumn({
+    required this.index,
+    required this.label,
+    required this.width,
+    this.isProgress = false,
+    this.fixedBackground,
+    this.weekStage = false,
+  });
 
   final int index;
   final String label;
   final double width;
   final bool isProgress;
   final Color? fixedBackground;
+  final bool weekStage;
 }
