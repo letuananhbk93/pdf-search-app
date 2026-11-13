@@ -161,7 +161,7 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('DASHBOARD - ${widget.poKey}', style: const TextStyle(color: kTimelineBordeaux)),
+        title: Text('OVERVIEW - ${widget.poKey}', style: const TextStyle(color: kTimelineBordeaux)),
         content: SizedBox(
           width: dashboardDialogWidth(dialogContext, 640),
           child: FutureBuilder<List<SupplierSchedule>>(
@@ -228,7 +228,7 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
                   child: FilledButton(
                     style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
                     onPressed: () => _showPoDashboard(context, suppliers),
-                    child: const Text('DASHBOARD'),
+                    child: const Text('OVERVIEW'),
                   ),
                 ),
               ),
@@ -484,7 +484,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                       child: FilledButton(
                         style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
                         onPressed: () => _showSupplierDashboard(context, planColours, products),
-                        child: const Text('DASHBOARD'),
+                        child: const Text('OVERVIEW'),
                       ),
                     ),
                   if (defaultHiddenColumns.isNotEmpty)
@@ -663,7 +663,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('DASHBOARD - ${widget.path.last}', style: const TextStyle(color: kTimelineBordeaux)),
+        title: Text('OVERVIEW - ${widget.path.last}', style: const TextStyle(color: kTimelineBordeaux)),
         content: SizedBox(width: dashboardDialogWidth(dialogContext, 360), child: ScheduleSummary(counts: ScheduleCounts.ofProducts(plan, products))),
         actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
       ),
