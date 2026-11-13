@@ -817,7 +817,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   /// is done, else zebra.
   Color? _cellBackground(_TableColumn column, Color? planColour, Map<String, dynamic> product,
       Map<int, int> stagePosition, List<bool> stageDone, bool zebraCell) {
-    if (widget.forManager) return column.fixedBackground ?? planColour;
+    if (widget.forManager) return column.fixedBackground ?? planColour ?? (zebraCell ? _zebraColor : null);
     final position = stagePosition[column.index];
     if (position != null && stageDone[position]) return const Color(0xFFFFFF00);
     return zebraCell ? _zebraColor : null;
