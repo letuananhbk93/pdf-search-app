@@ -139,6 +139,92 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
 
   void _retry() => setState(() => _future = _service.fetchSuppliers(widget.poKey));
 
+  /// Each supplier's counts. A sheet with fewer than 3 blocks has no schedule data and is skipped (counts null).
+  Future<List<_SupplierSchedule>> _loadSchedules(List<Map<String, dynamic>> suppliers) async {
+    final details = await Future.wait([for (final s in suppliers) _service.fetchSupplier(s['supplier_id'] as int)]);
+    final today = DateTime.now();
+    return [
+      for (var i = 0; i < suppliers.length; i++) _scheduleOf(suppliers[i]['name'] as String, details[i], today),
+    ];
+  }
+
+  static _SupplierSchedule _scheduleOf(String name, Map<String, dynamic> detail, DateTime today) {
+    final blocks = List<Map<String, dynamic>>.from(detail['blocks'] as List? ?? const []);
+    if (blocks.length < 3) return _SupplierSchedule(name, null);
+    final plan = PlanColours.fromData(blocks, List<String>.from(detail['headers'] as List), today);
+    final products = List<Map<String, dynamic>>.from(detail['products'] as List);
+    return _SupplierSchedule(name, ScheduleCounts.ofProducts(plan, products));
+  }
+
+  void _showPoDashboard(BuildContext context, List<Map<String, dynamic>> suppliers) {
+    final future = _loadSchedules(suppliers);
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('DASHBOARD - ${widget.poKey}', style: const TextStyle(color: kTimelineBordeaux)),
+        content: SizedBox(
+          width: 560,
+          child: FutureBuilder<List<_SupplierSchedule>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red));
+              }
+              final schedules = snapshot.data;
+              if (schedules == null) return const Center(child: CircularProgressIndicator());
+              final scheduled = schedules.where((schedule) => schedule.counts != null).toList();
+              final total = ScheduleCounts();
+              for (final schedule in scheduled) {
+                total.add(schedule.counts!);
+              }
+              final skipped = schedules.length - scheduled.length;
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ScheduleSummary(counts: total),
+                    const SizedBox(height: 12),
+                    if (scheduled.isNotEmpty)
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: const [
+                            DataColumn(label: Text('Supplier')),
+                            DataColumn(label: Text('On schedule'), numeric: true),
+                            DataColumn(label: Text('At risk of delay'), numeric: true),
+                            DataColumn(label: Text('Delayed'), numeric: true),
+                          ],
+                          rows: [
+                            for (final schedule in scheduled)
+                              DataRow(cells: [
+                                DataCell(Text(schedule.name)),
+                                DataCell(Text('${schedule.counts!.onSchedule}')),
+                                DataCell(Text('${schedule.counts!.atRisk}')),
+                                DataCell(Text('${schedule.counts!.delayed}')),
+                              ]),
+                          ],
+                        ),
+                      ),
+                    if (skipped > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          '$skipped ${skipped == 1 ? 'supplier' : 'suppliers'} skipped (no schedule data)',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -152,38 +238,63 @@ class _TimelineSupplierScreenState extends State<TimelineSupplierScreen> {
           if (suppliers.isEmpty) {
             return const Center(child: Text('No suppliers in this PO', style: TextStyle(color: Colors.grey)));
           }
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 260,
-              mainAxisExtent: 150,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: suppliers.length,
-            itemBuilder: (context, index) {
-              final supplier = suppliers[index];
-              final name = supplier['name'] as String;
-              return TimelineProgressCard(
-                title: name,
-                pct: (supplier['pct'] as num).toDouble(),
-                subtitle: '${supplier['product_count']} products',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TimelineTableScreen(
-                      supplierId: supplier['supplier_id'] as int,
-                      path: [...widget.path, name],
-                    ),
+          return Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
+                    onPressed: () => _showPoDashboard(context, suppliers),
+                    child: const Text('DASHBOARD'),
                   ),
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 260,
+                    mainAxisExtent: 150,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemCount: suppliers.length,
+                  itemBuilder: (context, index) {
+                    final supplier = suppliers[index];
+                    final name = supplier['name'] as String;
+                    return TimelineProgressCard(
+                      title: name,
+                      pct: (supplier['pct'] as num).toDouble(),
+                      subtitle: '${supplier['product_count']} products',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TimelineTableScreen(
+                            supplierId: supplier['supplier_id'] as int,
+                            path: [...widget.path, name],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
+}
+
+/// One supplier's schedule counts for the PO dashboard. counts is null when the sheet has no schedule data.
+class _SupplierSchedule {
+  const _SupplierSchedule(this.name, this.counts);
+
+  final String name;
+  final ScheduleCounts? counts;
 }
 
 /// Screen 4: the supplier's timeline table; completed stage cells are tinted yellow.
@@ -285,7 +396,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           }
           final showManagerButton = !widget.forManager && blocks.length >= 2;
           final planColours = widget.forManager && blocks.length >= 2
-              ? _PlanColours.fromData(blocks, headers, DateTime.now())
+              ? PlanColours.fromData(blocks, headers, DateTime.now())
               : null;
           // FOR MANAGER: the stage columns of blocks 2 and 3 hold week numbers, shown as W6 (Week 6)
           final weekStages = {
@@ -370,6 +481,15 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                           ),
                         ),
                         child: const Text('FOR MANAGER'),
+                      ),
+                    ),
+                  if (widget.forManager && planColours != null && planColours.plan.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
+                        onPressed: () => _showSupplierDashboard(context, planColours, products),
+                        child: const Text('DASHBOARD'),
                       ),
                     ),
                 ],
@@ -500,6 +620,17 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     return year * 10000 + int.parse(match.group(2)!) * 100 + int.parse(match.group(1)!);
   }
 
+  void _showSupplierDashboard(BuildContext context, PlanColours plan, List<Map<String, dynamic>> products) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('DASHBOARD - ${widget.path.last}', style: const TextStyle(color: kTimelineBordeaux)),
+        content: SizedBox(width: 360, child: ScheduleSummary(counts: ScheduleCounts.ofProducts(plan, products))),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+      ),
+    );
+  }
+
   void _hideColumn(_TableColumn column) {
     setState(() {
       _hiddenColumns[column.index] = column.label;
@@ -615,7 +746,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     Map<int, int> stagePosition,
     bool zebra,
     Set<int> zebraColumns,
-    _PlanColours? planColours,
+    PlanColours? planColours,
   ) {
     final cells = List<String>.from(product['cells'] as List);
     final stageDone = List<bool>.from(product['stage_done'] as List);
@@ -701,8 +832,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 
 /// FOR MANAGER colours. Block 2 (actual) is compared with block 3 (planning), stage by stage, in the same row.
 /// Block 2 stage cells only; the first matching rule decides the colour.
-class _PlanColours {
-  const _PlanColours({
+class PlanColours {
+  const PlanColours({
     required this.actual,
     required this.plan,
     required this.rawCarcass,
@@ -722,18 +853,27 @@ class _PlanColours {
   final int currentWeek; // ISO week of today
 
   /// Built from the backend blocks (block 2 = actual, block 3 = planning).
-  factory _PlanColours.fromData(List<Map<String, dynamic>> blocks, List<String> headers, DateTime today) {
+  factory PlanColours.fromData(List<Map<String, dynamic>> blocks, List<String> headers, DateTime today) {
     final actual = List<int>.from(blocks[1]['stage_columns'] as List);
     final plan = blocks.length >= 3 ? List<int>.from(blocks[2]['stage_columns'] as List) : <int>[];
     final rawIndex = actual.indexWhere((column) => headers[column].toUpperCase() == 'RAW CARCASS');
     final orderIndex = headers.indexWhere((header) => header.toUpperCase() == 'ORDER DATE *');
-    return _PlanColours(
+    return PlanColours(
       actual: actual,
       plan: plan,
       rawCarcass: rawIndex < 0 ? null : actual[rawIndex],
       orderDate: orderIndex < 0 ? null : orderIndex,
       currentWeek: isoWeekOf(today),
     );
+  }
+
+  /// Status of an order (row): the colour of its rightmost block 2 stage cell that has one. Null when none does.
+  Color? statusOf(List<String> cells) {
+    for (final column in actual.reversed) {
+      final colour = colourFor(cells, column);
+      if (colour != null) return colour;
+    }
+    return null;
   }
 
   /// Colour of one cell (null = no colour). cells is the row's text per column.
@@ -764,6 +904,66 @@ class _PlanColours {
 int isoWeekOf(DateTime date) {
   final thursday = DateTime(date.year, date.month, date.day + (4 - date.weekday));
   return thursday.difference(DateTime(thursday.year, 1, 1)).inDays ~/ 7 + 1;
+}
+
+/// Orders per schedule status. One row is one order, counted once by its status (see PlanColours.statusOf).
+class ScheduleCounts {
+  ScheduleCounts({this.onSchedule = 0, this.atRisk = 0, this.delayed = 0});
+
+  int onSchedule;
+  int atRisk;
+  int delayed;
+
+  static ScheduleCounts ofProducts(PlanColours plan, List<Map<String, dynamic>> products) {
+    final counts = ScheduleCounts();
+    for (final product in products) {
+      if (product['is_comment'] == true) continue; // note rows are not orders
+      final status = plan.statusOf(List<String>.from(product['cells'] as List));
+      if (status == PlanColours.green) counts.onSchedule++;
+      if (status == PlanColours.orange) counts.atRisk++;
+      if (status == PlanColours.red) counts.delayed++;
+    }
+    return counts;
+  }
+
+  void add(ScheduleCounts other) {
+    onSchedule += other.onSchedule;
+    atRisk += other.atRisk;
+    delayed += other.delayed;
+  }
+}
+
+/// The three schedule counts, each with its status colour.
+class ScheduleSummary extends StatelessWidget {
+  const ScheduleSummary({super.key, required this.counts});
+
+  final ScheduleCounts counts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _line('On schedule', counts.onSchedule, PlanColours.green),
+        _line('At risk of delay', counts.atRisk, PlanColours.orange),
+        _line('Delayed', counts.delayed, PlanColours.red),
+      ],
+    );
+  }
+
+  Widget _line(String label, int count, Color colour) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(width: 16, height: 16, color: colour),
+          const SizedBox(width: 8),
+          Text('$label: $count orders', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
 }
 
 class _TableColumn {
