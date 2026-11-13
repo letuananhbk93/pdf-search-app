@@ -316,6 +316,9 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   final Map<int, String> _hiddenColumns = {};
   // Product rows (index in the backend list) shown at full text height
   final Set<int> _expandedRows = {};
+  // FOR MANAGER hides these by default; the Columns dialog shows them. Not kept between visits (new screen state).
+  static const _defaultHiddenLabels = {'CUSTOMER', 'IMAGE'};
+  final Set<int> _shownByUser = {};
   Timer? _holdTimer;
   // Set when a hold opened the restore dialog, so the tap that ends the hold does not also sort
   bool _holdFired = false;
@@ -385,18 +388,29 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
           };
 
           // Progress is appended after the backend columns; swap it with IMAGE so it sits where IMAGE was.
-          // Only on the sheet view: the FOR MANAGER view keeps the sheet's own column order.
+          // FOR MANAGER: Progress sits just left of block 2's first stage column instead.
           final progressColumn = headers.length;
           final imageColumn = headers.indexWhere((header) => header.toUpperCase() == 'IMAGE');
-          final columnOrder = List<int>.generate(headers.length + (widget.forManager ? 0 : 1), (i) => i);
-          if (!widget.forManager && imageColumn >= 0) {
+          final actualStages = widget.forManager && blocks.length >= 2
+              ? List<int>.from(blocks[1]['stage_columns'] as List)
+              : const <int>[];
+          final actualStart = actualStages.isEmpty ? -1 : actualStages.first;
+          final columnOrder = List<int>.generate(headers.length + 1, (i) => i);
+          if (widget.forManager) {
+            columnOrder.remove(progressColumn);
+            columnOrder.insert(actualStart < 0 ? headers.length : columnOrder.indexOf(actualStart), progressColumn);
+          } else if (imageColumn >= 0) {
             columnOrder[imageColumn] = progressColumn;
             columnOrder[progressColumn] = imageColumn;
           }
+          // Columns the FOR MANAGER view hides by default (CUSTOMER, IMAGE) unless the user shows them
+          final defaultHiddenColumns = widget.forManager
+              ? [for (var i = 0; i < headers.length; i++) if (_defaultHiddenLabels.contains(headers[i].trim().toUpperCase())) i]
+              : const <int>[];
 
           final columns = <_TableColumn>[];
           for (final column in columnOrder) {
-            if (_hiddenColumns.containsKey(column) || !shownHere(column)) continue;
+            if (_hiddenColumns.containsKey(column) || !shownHere(column) || _hiddenByDefault(column, headers)) continue;
             if (column == progressColumn) {
               columns.add(_TableColumn(index: column, label: 'Progress', width: _progressWidth, isProgress: true));
             } else {
@@ -418,8 +432,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
 
           // Zebra striping on every other product row, only across the columns from NO to Progress (sheet view)
           final productRows = [for (final index in order) if (!_isNote(products[index])) index];
-          final zebraRows = widget.forManager ? <int>{} : {for (var i = 1; i < productRows.length; i += 2) productRows[i]};
-          final noPosition = columns.indexWhere((column) => column.label.toUpperCase() == 'NO');
+          final zebraRows = {for (var i = 1; i < productRows.length; i += 2) productRows[i]};
+          final noPosition = columns.indexWhere((column) => _isNoHeader(column.label));
           final progressPosition = columns.indexWhere((column) => column.isProgress);
           final zebraColumns = {
             for (var c = noPosition < 0 ? 0 : noPosition; c <= (progressPosition < 0 ? columns.length - 1 : progressPosition); c++) c,
@@ -471,6 +485,15 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                         style: FilledButton.styleFrom(backgroundColor: kTimelineBordeaux, foregroundColor: Colors.white),
                         onPressed: () => _showSupplierDashboard(context, planColours, products),
                         child: const Text('DASHBOARD'),
+                      ),
+                    ),
+                  if (defaultHiddenColumns.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showColumnsDialog(context, defaultHiddenColumns, headers),
+                        icon: const Icon(Icons.view_column, size: 18),
+                        label: const Text('Columns'),
                       ),
                     ),
                 ],
@@ -599,6 +622,41 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     var year = int.parse(match.group(3) ?? '0');
     if (year > 0 && year < 100) year += 2000;
     return year * 10000 + int.parse(match.group(2)!) * 100 + int.parse(match.group(1)!);
+  }
+
+  bool _hiddenByDefault(int column, List<String> headers) {
+    return widget.forManager &&
+        column < headers.length &&
+        _defaultHiddenLabels.contains(headers[column].trim().toUpperCase()) &&
+        !_shownByUser.contains(column);
+  }
+
+  static bool _isNoHeader(String label) => label.trim().toUpperCase().replaceFirst(RegExp(r'\.$'), '') == 'NO';
+
+  void _showColumnsDialog(BuildContext context, List<int> columns, List<String> headers) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Columns'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final column in columns)
+                CheckboxListTile(
+                  title: Text(headers[column]),
+                  value: _shownByUser.contains(column),
+                  onChanged: (checked) {
+                    setDialogState(() {});
+                    setState(() => checked == true ? _shownByUser.add(column) : _shownByUser.remove(column));
+                  },
+                ),
+            ],
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+        ),
+      ),
+    );
   }
 
   void _showSupplierDashboard(BuildContext context, PlanColours plan, List<Map<String, dynamic>> products) {
