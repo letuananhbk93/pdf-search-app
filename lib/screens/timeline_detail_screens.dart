@@ -284,6 +284,9 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
             return widget.forManager ? block >= 1 : block == 0 || column == noteColumn;
           }
           final showManagerButton = !widget.forManager && blocks.length >= 2;
+          final planColours = widget.forManager && blocks.length >= 2
+              ? _PlanColours.fromData(blocks, headers, DateTime.now())
+              : null;
           // FOR MANAGER: the stage columns of blocks 2 and 3 hold week numbers, shown as W6 (Week 6)
           final weekStages = {
             for (var b = 1; b < blocks.length; b++) ...List<int>.from(blocks[b]['stage_columns'] as List),
@@ -392,7 +395,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                                 if (_isNote(products[index]))
                                   _noteRow(products[index], tableWidth)
                                 else
-                                  _productRow(index, products[index], columns, stagePosition, zebraRows.contains(index), zebraColumns),
+                                  _productRow(index, products[index], columns, stagePosition, zebraRows.contains(index), zebraColumns, planColours),
                             ],
                           ),
                         ),
@@ -612,6 +615,7 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     Map<int, int> stagePosition,
     bool zebra,
     Set<int> zebraColumns,
+    _PlanColours? planColours,
   ) {
     final cells = List<String>.from(product['cells'] as List);
     final stageDone = List<bool>.from(product['stage_done'] as List);
@@ -626,7 +630,8 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
                   columns[c].weekStage ? _weekLabel(cells[columns[c].index]) : cells[columns[c].index],
                   width: columns[c].width,
                   expanded: expanded,
-                  background: _cellBackground(columns[c], product, stagePosition, stageDone, zebra && zebraColumns.contains(c)),
+                  background: _cellBackground(columns[c], planColours?.colourFor(cells, columns[c].index), product,
+                      stagePosition, stageDone, zebra && zebraColumns.contains(c)),
                 ),
       ],
     );
@@ -638,10 +643,11 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
     );
   }
 
-  /// FOR MANAGER: the sheet's own colour (block 3 fixed). Sheet view: yellow when the stage is done, else zebra.
-  Color? _cellBackground(_TableColumn column, Map<String, dynamic> product, Map<int, int> stagePosition,
-      List<bool> stageDone, bool zebraCell) {
-    if (widget.forManager) return column.fixedBackground ?? _storedColour(product, column.index);
+  /// FOR MANAGER: block 3 fixed colour, block 2 stage colour from the plan rules. Sheet view: yellow when the stage
+  /// is done, else zebra.
+  Color? _cellBackground(_TableColumn column, Color? planColour, Map<String, dynamic> product,
+      Map<int, int> stagePosition, List<bool> stageDone, bool zebraCell) {
+    if (widget.forManager) return column.fixedBackground ?? planColour;
     final position = stagePosition[column.index];
     if (position != null && stageDone[position]) return const Color(0xFFFFFF00);
     return zebraCell ? _zebraColor : null;
@@ -651,13 +657,6 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
   String _weekLabel(String text) {
     final match = _weekPattern.firstMatch(text.trim());
     return match == null ? text : 'W${match.group(1)}';
-  }
-
-  /// The colour stored at sync for one cell, as '#RRGGBB'. Null when the sheet has no fill there.
-  static Color? _storedColour(Map<String, dynamic> product, int column) {
-    final colours = product['colours'] as List? ?? const [];
-    if (column >= colours.length || colours[column] == null) return null;
-    return Color(0xFF000000 | int.parse((colours[column] as String).substring(1), radix: 16));
   }
 
   double _paddingFor(double width) => width == _narrowColumnWidth ? 4 : 12;
@@ -698,6 +697,73 @@ class _TimelineTableScreenState extends State<TimelineTableScreen> {
       ),
     );
   }
+}
+
+/// FOR MANAGER colours. Block 2 (actual) is compared with block 3 (planning), stage by stage, in the same row.
+/// Block 2 stage cells only; the first matching rule decides the colour.
+class _PlanColours {
+  const _PlanColours({
+    required this.actual,
+    required this.plan,
+    required this.rawCarcass,
+    required this.orderDate,
+    required this.currentWeek,
+  });
+
+  static const green = Color(0xFF00B050);
+  static const orange = Color(0xFFFFC000);
+  static const red = Color(0xFFFF0000);
+
+  /// Block 2 stage columns, and block 3 stage columns in the same order (pairs by position)
+  final List<int> actual;
+  final List<int> plan;
+  final int? rawCarcass; // block 2 RAW CARCASS column: AVAILABLE is green
+  final int? orderDate; // ORDER DATE * column: week the order was placed
+  final int currentWeek; // ISO week of today
+
+  /// Built from the backend blocks (block 2 = actual, block 3 = planning).
+  factory _PlanColours.fromData(List<Map<String, dynamic>> blocks, List<String> headers, DateTime today) {
+    final actual = List<int>.from(blocks[1]['stage_columns'] as List);
+    final plan = blocks.length >= 3 ? List<int>.from(blocks[2]['stage_columns'] as List) : <int>[];
+    final rawIndex = actual.indexWhere((column) => headers[column].toUpperCase() == 'RAW CARCASS');
+    final orderIndex = headers.indexWhere((header) => header.toUpperCase() == 'ORDER DATE *');
+    return _PlanColours(
+      actual: actual,
+      plan: plan,
+      rawCarcass: rawIndex < 0 ? null : actual[rawIndex],
+      orderDate: orderIndex < 0 ? null : orderIndex,
+      currentWeek: isoWeekOf(today),
+    );
+  }
+
+  /// Colour of one cell (null = no colour). cells is the row's text per column.
+  Color? colourFor(List<String> cells, int column) {
+    final pair = actual.indexOf(column);
+    if (pair < 0 || pair >= plan.length) return null;
+    final actualText = cells[column].trim();
+    final planText = cells[plan[pair]].trim();
+    if (column == rawCarcass && actualText.toUpperCase() == 'AVAILABLE') return green;
+    if (actualText.isEmpty) {
+      // Planned for a week that has come, but nothing done
+      final order = orderDate == null ? null : num.tryParse(cells[orderDate!].trim());
+      final planValue = num.tryParse(planText);
+      if (planValue == null || order == null) return null;
+      return planValue <= currentWeek - order + 1 ? red : null;
+    }
+    final actualValue = num.tryParse(actualText);
+    final planValue = num.tryParse(planText);
+    if (actualValue == null || planValue == null) return null;
+    final diff = actualValue - planValue;
+    if (diff <= 1) return green;
+    if (diff <= 5) return orange;
+    return red;
+  }
+}
+
+/// ISO 8601 week number of a date (week 1 holds the year's first Thursday).
+int isoWeekOf(DateTime date) {
+  final thursday = DateTime(date.year, date.month, date.day + (4 - date.weekday));
+  return thursday.difference(DateTime(thursday.year, 1, 1)).inDays ~/ 7 + 1;
 }
 
 class _TableColumn {
